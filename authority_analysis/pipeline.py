@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,7 +25,14 @@ from .prompt_generator import (
 )
 from .sae_module import SAETrainConfig, load_layer_residual_matrix, save_sae_checkpoint, train_sae
 from .schemas import validate_prompt_row
-from .utils import current_git_commit, ensure_dir, read_jsonl, set_global_seed, write_json
+from .utils import (
+    current_git_commit,
+    ensure_dir,
+    read_jsonl,
+    set_global_seed,
+    write_json,
+    write_jsonl,
+)
 
 
 
@@ -62,6 +71,11 @@ def _artifact_dict_from_forward(artifacts: Any) -> dict[str, Any]:
 def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     cfg = load_config(config_path)
     set_global_seed(cfg.seed)
+    git_hash = current_git_commit()
+    config_ref = str(Path(config_path).resolve())
+    config_hash = hashlib.sha256(
+        json.dumps(cfg.to_dict(), sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
     result_root = ensure_dir(cfg.results_root())
     log_dir = ensure_dir(Path(result_root) / "logs")
@@ -84,12 +98,15 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         model_name=cfg.model,
         device=cfg.device,
         dtype=cfg.dtype,
+        probe_instruction=cfg.probe_instruction,
     )
     logger = ActivationLogger(activation_root)
     capture_layers = None if cfg.capture_all_layers else set(cfg.capture_layers or [cfg.layer_for_sae])
+    prompt_log_rows: list[dict[str, Any]] = []
 
     baseline_rows: list[dict[str, Any]] = []
     for row in tqdm(prompt_rows, desc="Collecting activations"):
+        composed_prompt = model.compose_prompt(row["full_prompt"])
         artifacts = model.run_forward(
             row["full_prompt"],
             max_tokens=cfg.max_tokens,
@@ -112,6 +129,19 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 "compliance_score": artifacts.compliance_score,
                 "logit_diff": artifacts.logit_diff,
                 "is_refusal": artifacts.is_refusal,
+            }
+        )
+        prompt_log_rows.append(
+            {
+                "prompt_id": row["prompt_id"],
+                "variant": "authority" if row.get("framing_type") == "authority" else "baseline",
+                "risk_tier": row.get("risk_tier", "unknown"),
+                "domain": row.get("domain", "unknown"),
+                "prompt": composed_prompt,
+                "seed": cfg.seed,
+                "git_hash": git_hash,
+                "config_path": config_ref,
+                "config_hash": config_hash,
             }
         )
 
@@ -163,6 +193,20 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
 
     authority_prompts = [r for r in prompt_rows if r["framing_type"] == "authority"]
     intervention_engine = CausalInterventionEngine(model)
+    for row in authority_prompts:
+        prompt_log_rows.append(
+            {
+                "prompt_id": row["prompt_id"],
+                "variant": "intervention",
+                "risk_tier": row.get("risk_tier", "unknown"),
+                "domain": row.get("domain", "unknown"),
+                "prompt": model.compose_prompt(row["full_prompt"]),
+                "seed": cfg.seed,
+                "git_hash": git_hash,
+                "config_path": config_ref,
+                "config_hash": config_hash,
+            }
+        )
     intervention_rows = intervention_engine.run(
         prompts=authority_prompts,
         layer_idx=cfg.layer_for_sae,
@@ -177,6 +221,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         control_framings=cfg.control_framing_types,
     )
     write_json(Path(log_dir) / "intervention_samples.json", {"samples": intervention_eval_rows})
+    write_jsonl(Path(log_dir) / "prompts.jsonl", prompt_log_rows)
 
     report = generate_report(
         result_dir=result_root,
@@ -192,7 +237,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
 
     run_manifest = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "git_commit": current_git_commit(),
+        "git_commit": git_hash,
         "dataset_version": cfg.dataset_version,
         "config": cfg.to_dict(),
         "artifacts": {

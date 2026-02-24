@@ -35,6 +35,7 @@ class ModelInterface:
         model_name: str,
         device: str = "auto",
         dtype: str = "float16",
+        probe_instruction: str = "Answer with exactly one word: yes or no.",
     ) -> None:
         self.model_name = model_name
         self.device = self._resolve_device(device)
@@ -55,6 +56,7 @@ class ModelInterface:
         self.layers = self._decoder_layers()
         self.refusal_cue_token_ids = cue_first_token_ids(self.tokenizer, REFUSAL_CUES)
         self.compliance_cue_token_ids = cue_first_token_ids(self.tokenizer, COMPLIANCE_CUES)
+        self.probe_instruction = probe_instruction.strip()
 
     @staticmethod
     def _resolve_device(device: str) -> torch.device:
@@ -84,6 +86,10 @@ class ModelInterface:
     def _to_fp16_cpu(tensor: torch.Tensor) -> torch.Tensor:
         return tensor.detach().to(dtype=torch.float16, device="cpu")
 
+    def compose_prompt(self, prompt_text: str) -> str:
+        base = prompt_text.rstrip()
+        return f"{base}\n\n{self.probe_instruction}"
+
     def run_forward(
         self,
         prompt_text: str,
@@ -93,6 +99,7 @@ class ModelInterface:
         capture_layers: set[int] | None = None,
         capture_attentions: bool = False,
     ) -> ModelForwardArtifacts:
+        prompt_text = self.compose_prompt(prompt_text)
         encoded = self.tokenizer(
             prompt_text,
             return_tensors="pt",

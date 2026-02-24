@@ -24,6 +24,7 @@ class ExperimentConfig:
     seed: int = 42
     device: str = "auto"
     dtype: str = "float16"
+    probe_instruction: str = "Answer with exactly one word: yes or no."
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -47,6 +48,8 @@ class ExperimentConfig:
             raise ValueError(f"framing_types is missing required entries: {missing}")
         if "authority" not in self.framing_types:
             raise ValueError("framing_types must include 'authority'")
+        if not isinstance(self.probe_instruction, str) or not self.probe_instruction.strip():
+            raise ValueError("probe_instruction must be a non-empty string")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:

@@ -77,6 +77,10 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dtype", default="float16")
+    parser.add_argument(
+        "--probe-instruction",
+        default="Answer with exactly one word: yes or no.",
+    )
     args = parser.parse_args()
 
     vector_payload = torch.load(args.direction, map_location="cpu")
@@ -87,6 +91,7 @@ def main() -> None:
         model_name=args.model,
         device=args.device,
         dtype=args.dtype,
+        probe_instruction=args.probe_instruction,
     )
     engine = CausalInterventionEngine(mi)
     rows = engine.run(
