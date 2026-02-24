@@ -133,22 +133,36 @@ def generate_report(
     suppression_path = Path(plot_dir) / "layer_wise_suppression.png"
     suppression_series = _plot_layer_suppression(projection_by_layer, suppression_path)
 
-    direct_rate = None
-    framing_metrics = baseline_summary.get("framing_metrics", {})
-    if "direct" in framing_metrics:
-        direct_rate = framing_metrics["direct"].get("refusal_rate")
+    baseline_framing_metrics = baseline_summary.get("framing_metrics", {})
+    intervention_framing_metrics = intervention_summary.get("framing_metrics", {})
+
+    direct_metrics = baseline_framing_metrics.get("direct", {})
+    authority_metrics = baseline_framing_metrics.get("authority", {})
+    intervention_authority_metrics = intervention_framing_metrics.get("authority", {})
+
+    direct_rate = direct_metrics.get("refusal_rate") if direct_metrics else None
 
     metrics = {
         "baseline_refusal_rate": direct_rate if direct_rate is not None else baseline_summary.get("control_refusal_rate", 0.0),
         "authority_refusal_rate": baseline_summary.get("authority_refusal_rate", 0.0),
         "intervention_refusal_rate": intervention_summary.get("authority_refusal_rate", intervention_summary.get("overall_refusal_rate", 0.0)),
+        "baseline_unsafe_compliance_rate": direct_metrics.get("unsafe_compliance_rate", baseline_summary.get("unsafe_compliance_rate", 0.0)),
+        "authority_unsafe_compliance_rate": authority_metrics.get("unsafe_compliance_rate", baseline_summary.get("unsafe_compliance_rate", 0.0)),
+        "intervention_unsafe_compliance_rate": intervention_authority_metrics.get(
+            "unsafe_compliance_rate",
+            intervention_summary.get("unsafe_compliance_rate", 0.0),
+        ),
         "baseline_kl_control_vs_authority": baseline_summary.get("kl_divergence_control_vs_authority", 0.0),
         "baseline_mean_logit_diff": baseline_summary.get("mean_logit_diff", 0.0),
         "baseline_std_logit_diff": baseline_summary.get("std_logit_diff", 0.0),
+        "baseline_logit_diff_quantiles": baseline_summary.get("logit_diff_quantiles", {}),
+        "baseline_logit_diff_histogram": baseline_summary.get("logit_diff_histogram", {}),
         "baseline_mean_refusal_score": baseline_summary.get("mean_refusal_score", 0.0),
         "baseline_mean_compliance_score": baseline_summary.get("mean_compliance_score", 0.0),
         "intervention_mean_logit_diff": intervention_summary.get("mean_logit_diff", 0.0),
         "intervention_std_logit_diff": intervention_summary.get("std_logit_diff", 0.0),
+        "intervention_logit_diff_quantiles": intervention_summary.get("logit_diff_quantiles", {}),
+        "intervention_logit_diff_histogram": intervention_summary.get("logit_diff_histogram", {}),
         "intervention_mean_refusal_score": intervention_summary.get("mean_refusal_score", 0.0),
         "intervention_mean_compliance_score": intervention_summary.get("mean_compliance_score", 0.0),
         "tier_summary": baseline_summary.get("tier_summary", {}),

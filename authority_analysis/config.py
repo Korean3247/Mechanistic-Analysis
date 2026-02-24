@@ -25,7 +25,10 @@ class ExperimentConfig:
     device: str = "auto"
     dtype: str = "float16"
     probe_instruction: str = "Answer with exactly one word: yes or no."
-    refusal_margin: float = 0.5
+    refusal_margin: float = 1.0
+    behavioral_ground_truth_samples_per_variant: int = 0
+    behavioral_ground_truth_max_new_tokens: int = 48
+    behavioral_ground_truth_use_probe_instruction: bool = False
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -53,6 +56,10 @@ class ExperimentConfig:
             raise ValueError("probe_instruction must be a non-empty string")
         if self.refusal_margin < 0:
             raise ValueError("refusal_margin must be >= 0")
+        if self.behavioral_ground_truth_samples_per_variant < 0:
+            raise ValueError("behavioral_ground_truth_samples_per_variant must be >= 0")
+        if self.behavioral_ground_truth_max_new_tokens < 1:
+            raise ValueError("behavioral_ground_truth_max_new_tokens must be >= 1")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:

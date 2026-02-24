@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,7 @@ from typing import Any
 from tqdm import tqdm
 
 from .activation_logger import ActivationLogger
-from .behavior_evaluator import evaluate_behavior
+from .behavior_evaluator import COMPLIANCE_CUES, REFUSAL_CUES, evaluate_behavior
 from .causal_intervention import CausalInterventionEngine
 from .config import ExperimentConfig, load_config
 from .feature_analyzer import compute_feature_analysis, save_feature_analysis
@@ -35,7 +36,6 @@ from .utils import (
 )
 
 
-
 def _check_prompt_security(rows: list[dict[str, Any]], cfg: ExperimentConfig) -> None:
     for row in rows:
         validate_prompt_row(row)
@@ -54,7 +54,6 @@ def _check_prompt_security(rows: list[dict[str, Any]], cfg: ExperimentConfig) ->
             raise ValueError(f"risk_level must be controlled: prompt_id={row['prompt_id']}")
 
 
-
 def _artifact_dict_from_forward(artifacts: Any) -> dict[str, Any]:
     return {
         "residual_stream": artifacts.residual_stream,
@@ -66,6 +65,61 @@ def _artifact_dict_from_forward(artifacts: Any) -> dict[str, Any]:
         "is_refusal": artifacts.is_refusal,
     }
 
+
+def _sample_rows_by_tier(
+    rows: list[dict[str, Any]],
+    sample_count: int,
+    rng: random.Random,
+) -> list[dict[str, Any]]:
+    if sample_count <= 0:
+        return []
+    if len(rows) <= sample_count:
+        return list(rows)
+
+    by_tier: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        tier = str(row.get("risk_tier", "unknown"))
+        by_tier.setdefault(tier, []).append(row)
+
+    sampled: list[dict[str, Any]] = []
+    tier_order = ["safe", "borderline", "unsafe", "unknown"]
+    ordered_tiers = tier_order + sorted([tier for tier in by_tier if tier not in tier_order])
+    active_tiers = [tier for tier in ordered_tiers if by_tier.get(tier)]
+
+    # First pass: distribute picks across tiers to avoid single-tier bias.
+    while len(sampled) < sample_count and active_tiers:
+        for tier in list(active_tiers):
+            if len(sampled) >= sample_count:
+                break
+            bucket = by_tier[tier]
+            if not bucket:
+                continue
+            idx = rng.randrange(len(bucket))
+            sampled.append(bucket.pop(idx))
+        active_tiers = [tier for tier in active_tiers if by_tier[tier]]
+
+    if len(sampled) < sample_count:
+        remainder: list[dict[str, Any]] = []
+        for tier in ordered_tiers:
+            remainder.extend(by_tier.get(tier, []))
+        rng.shuffle(remainder)
+        sampled.extend(remainder[: sample_count - len(sampled)])
+
+    return sampled[:sample_count]
+
+
+def _guess_generated_behavior(generated_text: str) -> str:
+    lowered = generated_text.casefold()
+    refusal_hit = any(cue.strip().casefold() in lowered for cue in REFUSAL_CUES)
+    compliance_hit = any(cue.strip().casefold() in lowered for cue in COMPLIANCE_CUES)
+
+    if refusal_hit and not compliance_hit:
+        return "refusal"
+    if compliance_hit and not refusal_hit:
+        return "compliance"
+    if refusal_hit and compliance_hit:
+        return "mixed"
+    return "unknown"
 
 
 def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
@@ -226,6 +280,90 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     write_json(Path(log_dir) / "intervention_samples.json", {"samples": intervention_eval_rows})
     write_jsonl(Path(log_dir) / "prompts.jsonl", prompt_log_rows)
 
+    if cfg.behavioral_ground_truth_samples_per_variant > 0:
+        prompt_lookup = {row["prompt_id"]: row for row in prompt_rows}
+        candidates_by_variant: dict[str, list[dict[str, Any]]] = {
+            "baseline": [],
+            "authority": [],
+            "intervention": [],
+        }
+
+        for row in baseline_eval_rows:
+            src = prompt_lookup.get(row["prompt_id"])
+            if src is None:
+                continue
+            variant = "authority" if row.get("framing_type") == "authority" else "baseline"
+            candidates_by_variant[variant].append({**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]})
+
+        for row in intervention_eval_rows:
+            src = prompt_lookup.get(row["prompt_id"])
+            if src is None:
+                continue
+            candidates_by_variant["intervention"].append(
+                {**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]}
+            )
+
+        rng = random.Random(cfg.seed)
+        intervention_fn = intervention_engine.make_projection_removal_fn(
+            feature_payload["residual_direction_normalized"],
+            alpha=cfg.alpha_intervention,
+        )
+        diagnostic_rows: list[dict[str, Any]] = []
+
+        for variant, candidates in candidates_by_variant.items():
+            sampled = _sample_rows_by_tier(
+                rows=candidates,
+                sample_count=cfg.behavioral_ground_truth_samples_per_variant,
+                rng=rng,
+            )
+            for sampled_row in sampled:
+                generation_prompt = sampled_row["prompt"]
+                generated_text = model.generate_short_completion(
+                    prompt_text=generation_prompt,
+                    max_tokens=cfg.max_tokens,
+                    max_new_tokens=cfg.behavioral_ground_truth_max_new_tokens,
+                    use_probe_instruction=cfg.behavioral_ground_truth_use_probe_instruction,
+                    intervention_layer=cfg.layer_for_sae if variant == "intervention" else None,
+                    intervention_fn=intervention_fn if variant == "intervention" else None,
+                )
+                generation_input = (
+                    model.compose_prompt(generation_prompt)
+                    if cfg.behavioral_ground_truth_use_probe_instruction
+                    else generation_prompt.rstrip()
+                )
+                predicted_label = "refusal" if bool(sampled_row.get("is_refusal", False)) else "compliance"
+                generated_guess = _guess_generated_behavior(generated_text)
+                diagnostic_rows.append(
+                    {
+                        "prompt_id": sampled_row["prompt_id"],
+                        "variant": variant,
+                        "framing_type": sampled_row.get("framing_type", "unknown"),
+                        "semantic_request_id": sampled_row.get("semantic_request_id", "unknown"),
+                        "risk_tier": sampled_row.get("risk_tier", "unknown"),
+                        "domain": sampled_row.get("domain", "unknown"),
+                        "prompt": generation_input,
+                        "generated_text": generated_text,
+                        "predicted_behavior": predicted_label,
+                        "predicted_is_refusal": bool(sampled_row.get("is_refusal", False)),
+                        "refusal_score": float(sampled_row.get("refusal_score", 0.0)),
+                        "compliance_score": float(sampled_row.get("compliance_score", 0.0)),
+                        "logit_diff": float(sampled_row.get("logit_diff", 0.0)),
+                        "generated_behavior_guess": generated_guess,
+                        "generated_guess_matches_prediction": (
+                            generated_guess == predicted_label
+                            if generated_guess in {"refusal", "compliance"}
+                            else None
+                        ),
+                        "max_new_tokens": cfg.behavioral_ground_truth_max_new_tokens,
+                        "seed": cfg.seed,
+                        "git_hash": git_hash,
+                        "config_path": config_ref,
+                        "config_hash": config_hash,
+                    }
+                )
+
+        write_jsonl(Path(log_dir) / "behavioral_ground_truth.jsonl", diagnostic_rows)
+
     report = generate_report(
         result_dir=result_root,
         baseline_summary=baseline_summary,
@@ -267,7 +405,6 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         "direction_path": str(direction_path),
         "metrics": report["metrics"],
     }
-
 
 
 def main() -> None:

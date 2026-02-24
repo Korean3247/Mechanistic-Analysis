@@ -8,7 +8,10 @@ max_tokens: 128
 alpha_intervention: 1.0
 seed: 42
 probe_instruction: "Answer with exactly one word: yes or no."
-refusal_margin: 0.5
+refusal_margin: 1.0
+behavioral_ground_truth_samples_per_variant: 0
+behavioral_ground_truth_max_new_tokens: 48
+behavioral_ground_truth_use_probe_instruction: false
 capture_attentions: false
 capture_all_layers: false
 capture_layers:
