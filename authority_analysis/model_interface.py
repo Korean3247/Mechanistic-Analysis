@@ -233,6 +233,8 @@ class ModelInterface:
         use_probe_instruction: bool = False,
         intervention_layer: int | None = None,
         intervention_fn: InterventionFn | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> str:
         source_prompt = self.compose_prompt(prompt_text) if use_probe_instruction else prompt_text.rstrip()
         encoded = self.tokenizer(
@@ -252,14 +254,27 @@ class ModelInterface:
 
         try:
             with torch.inference_mode():
-                generated = self.model.generate(
+                do_sample = bool((temperature is not None) or (top_p is not None))
+                generate_kwargs: dict[str, Any] = {
                     **encoded,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=False,
-                    num_beams=1,
-                    use_cache=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id,
+                    "max_new_tokens": max_new_tokens,
+                    "do_sample": do_sample,
+                    "num_beams": 1,
+                    "use_cache": True,
+                    "pad_token_id": self.tokenizer.pad_token_id,
+                    "eos_token_id": self.tokenizer.eos_token_id,
+                }
+                if do_sample:
+                    if temperature is not None:
+                        generate_kwargs["temperature"] = float(temperature)
+                    if top_p is not None:
+                        generate_kwargs["top_p"] = float(top_p)
+                else:
+                    # Neutralize model-level sampling defaults to avoid ignored-flag warnings.
+                    generate_kwargs["temperature"] = 1.0
+                    generate_kwargs["top_p"] = 1.0
+                generated = self.model.generate(
+                    **generate_kwargs,
                 )
         finally:
             self._remove_hooks(hook_handles)

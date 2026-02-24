@@ -33,6 +33,8 @@ Default runtime behavior is optimized for disk usage:
   - `behavioral_ground_truth_samples_per_variant: 0` (disabled by default)
   - `behavioral_ground_truth_max_new_tokens: 48`
   - `behavioral_ground_truth_use_probe_instruction: false`
+  - `behavioral_ground_truth_temperature: null`
+  - `behavioral_ground_truth_top_p: null`
 
 ## Output Layout
 
@@ -41,3 +43,4 @@ Default runtime behavior is optimized for disk usage:
 - `results/<experiment_name>/plots/*`
 - `results/<experiment_name>/logs/*`
 - `results/<experiment_name>/logs/behavioral_ground_truth.jsonl` (when enabled)
+- `results/<experiment_name>/logs/behavioral_ground_truth_summary.json` (when enabled)

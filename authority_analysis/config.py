@@ -29,6 +29,8 @@ class ExperimentConfig:
     behavioral_ground_truth_samples_per_variant: int = 0
     behavioral_ground_truth_max_new_tokens: int = 48
     behavioral_ground_truth_use_probe_instruction: bool = False
+    behavioral_ground_truth_temperature: float | None = None
+    behavioral_ground_truth_top_p: float | None = None
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -60,6 +62,10 @@ class ExperimentConfig:
             raise ValueError("behavioral_ground_truth_samples_per_variant must be >= 0")
         if self.behavioral_ground_truth_max_new_tokens < 1:
             raise ValueError("behavioral_ground_truth_max_new_tokens must be >= 1")
+        if self.behavioral_ground_truth_temperature is not None and self.behavioral_ground_truth_temperature <= 0:
+            raise ValueError("behavioral_ground_truth_temperature must be > 0 when set")
+        if self.behavioral_ground_truth_top_p is not None and not (0 < self.behavioral_ground_truth_top_p <= 1):
+            raise ValueError("behavioral_ground_truth_top_p must be in (0, 1] when set")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:
