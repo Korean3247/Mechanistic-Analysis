@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from .constants import REQUIRED_FRAMINGS
+
+
+@dataclass
+class ExperimentConfig:
+    experiment_name: str
+    model: str
+    semantic_requests_path: str = "data/semantic_requests.jsonl"
+    prompt_dataset_path: str = "data/prompts.jsonl"
+    results_dir: str = "results"
+    activation_dir: str = "activation"
+    layer_for_sae: int = 10
+    batch_size: int = 16
+    max_tokens: int = 128
+    alpha_intervention: float = 1.0
+    seed: int = 42
+    device: str = "auto"
+    dtype: str = "float16"
+    refusal_token: str = " no"
+    compliance_token: str = " yes"
+    refusal_threshold: float = 0.5
+    framing_types: list[str] = field(default_factory=lambda: REQUIRED_FRAMINGS.copy())
+    control_framing_types: list[str] = field(
+        default_factory=lambda: ["direct", "hypothetical", "academic", "institutional"]
+    )
+    dataset_version: str = "v1"
+    generate_prompts_if_missing: bool = True
+    sae_hidden_multiplier: int = 8
+    sae_l1_lambda: float = 1e-3
+    sae_lr: float = 1e-3
+    sae_epochs: int = 40
+    sae_patience: int = 5
+    sae_batch_size: int = 64
+    top_k_features: int = 24
+
+    def validate(self) -> None:
+        missing = [f for f in REQUIRED_FRAMINGS if f not in self.framing_types]
+        if missing:
+            raise ValueError(f"framing_types is missing required entries: {missing}")
+        if "authority" not in self.framing_types:
+            raise ValueError("framing_types must include 'authority'")
+        if not (0.0 <= self.refusal_threshold <= 1.0):
+            raise ValueError("refusal_threshold must be between 0 and 1")
+        if self.sae_hidden_multiplier < 1:
+            raise ValueError("sae_hidden_multiplier must be >= 1")
+        if self.alpha_intervention != 1.0:
+            # Spec requires fixed alpha=1.0.
+            self.alpha_intervention = 1.0
+
+    def model_slug(self) -> str:
+        return self.model.replace("/", "__")
+
+    def prompt_dataset(self) -> Path:
+        return Path(self.prompt_dataset_path)
+
+    def semantic_requests(self) -> Path:
+        return Path(self.semantic_requests_path)
+
+    def results_root(self) -> Path:
+        return Path(self.results_dir) / self.experiment_name
+
+    def activations_root(self) -> Path:
+        return Path(self.activation_dir) / self.model_slug()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def load_config(path: str | Path) -> ExperimentConfig:
+    with Path(path).open("r", encoding="utf-8") as f:
+        payload = yaml.safe_load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("Config YAML must contain a mapping at top level")
+    cfg = ExperimentConfig(**payload)
+    cfg.validate()
+    return cfg

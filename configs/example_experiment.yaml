@@ -1,0 +1,36 @@
+experiment_name: "example_authority_analysis"
+model: "distilgpt2"
+semantic_requests_path: "data/semantic_requests.jsonl"
+prompt_dataset_path: "data/prompts.jsonl"
+results_dir: "results"
+activation_dir: "activation"
+layer_for_sae: 3
+batch_size: 16
+max_tokens: 128
+alpha_intervention: 1.0
+seed: 42
+device: "auto"
+dtype: "float16"
+refusal_token: " no"
+compliance_token: " yes"
+refusal_threshold: 0.5
+framing_types:
+  - direct
+  - hypothetical
+  - academic
+  - authority
+  - institutional
+control_framing_types:
+  - direct
+  - hypothetical
+  - academic
+  - institutional
+dataset_version: "v1"
+generate_prompts_if_missing: true
+sae_hidden_multiplier: 8
+sae_l1_lambda: 0.001
+sae_lr: 0.001
+sae_epochs: 20
+sae_patience: 4
+sae_batch_size: 32
+top_k_features: 16

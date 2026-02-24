@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "authority-policy-suppression"
+version = "0.1.0"
+description = "Authority-induced policy suppression analysis framework"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "torch>=2.2",
+  "transformers>=4.40",
+  "pyyaml>=6.0",
+  "numpy>=1.26",
+  "tqdm>=4.66",
+  "matplotlib>=3.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["authority_analysis*"]
