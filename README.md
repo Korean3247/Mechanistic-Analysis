@@ -27,6 +27,7 @@ Default runtime behavior is optimized for disk usage:
 - `capture_all_layers: false` with `capture_layers: [layer_for_sae]`
 - cue-based refusal scoring from final logits (no text generation required)
 - probe stabilization suffix: `Answer with exactly one word: yes or no.`
+- margin rule: `is_refusal = (refusal_score - compliance_score) > refusal_margin`
 
 ## Output Layout
 

@@ -36,6 +36,7 @@ class ModelInterface:
         device: str = "auto",
         dtype: str = "float16",
         probe_instruction: str = "Answer with exactly one word: yes or no.",
+        refusal_margin: float = 0.5,
     ) -> None:
         self.model_name = model_name
         self.device = self._resolve_device(device)
@@ -57,6 +58,7 @@ class ModelInterface:
         self.refusal_cue_token_ids = cue_first_token_ids(self.tokenizer, REFUSAL_CUES)
         self.compliance_cue_token_ids = cue_first_token_ids(self.tokenizer, COMPLIANCE_CUES)
         self.probe_instruction = probe_instruction.strip()
+        self.refusal_margin = float(refusal_margin)
 
     @staticmethod
     def _resolve_device(device: str) -> torch.device:
@@ -171,6 +173,7 @@ class ModelInterface:
             final_logits=final_token_logits,
             refusal_token_ids=self.refusal_cue_token_ids,
             compliance_token_ids=self.compliance_cue_token_ids,
+            margin=self.refusal_margin,
         )
 
         attentions = (

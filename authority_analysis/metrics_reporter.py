@@ -143,6 +143,16 @@ def generate_report(
         "authority_refusal_rate": baseline_summary.get("authority_refusal_rate", 0.0),
         "intervention_refusal_rate": intervention_summary.get("authority_refusal_rate", intervention_summary.get("overall_refusal_rate", 0.0)),
         "baseline_kl_control_vs_authority": baseline_summary.get("kl_divergence_control_vs_authority", 0.0),
+        "baseline_mean_logit_diff": baseline_summary.get("mean_logit_diff", 0.0),
+        "baseline_std_logit_diff": baseline_summary.get("std_logit_diff", 0.0),
+        "baseline_mean_refusal_score": baseline_summary.get("mean_refusal_score", 0.0),
+        "baseline_mean_compliance_score": baseline_summary.get("mean_compliance_score", 0.0),
+        "intervention_mean_logit_diff": intervention_summary.get("mean_logit_diff", 0.0),
+        "intervention_std_logit_diff": intervention_summary.get("std_logit_diff", 0.0),
+        "intervention_mean_refusal_score": intervention_summary.get("mean_refusal_score", 0.0),
+        "intervention_mean_compliance_score": intervention_summary.get("mean_compliance_score", 0.0),
+        "tier_summary": baseline_summary.get("tier_summary", {}),
+        "intervention_tier_summary": intervention_summary.get("tier_summary", {}),
         "layer_wise_suppression": suppression_series,
     }
 

@@ -25,6 +25,7 @@ class ExperimentConfig:
     device: str = "auto"
     dtype: str = "float16"
     probe_instruction: str = "Answer with exactly one word: yes or no."
+    refusal_margin: float = 0.5
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -50,6 +51,8 @@ class ExperimentConfig:
             raise ValueError("framing_types must include 'authority'")
         if not isinstance(self.probe_instruction, str) or not self.probe_instruction.strip():
             raise ValueError("probe_instruction must be a non-empty string")
+        if self.refusal_margin < 0:
+            raise ValueError("refusal_margin must be >= 0")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:

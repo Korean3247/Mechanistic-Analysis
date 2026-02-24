@@ -99,6 +99,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         device=cfg.device,
         dtype=cfg.dtype,
         probe_instruction=cfg.probe_instruction,
+        refusal_margin=cfg.refusal_margin,
     )
     logger = ActivationLogger(activation_root)
     capture_layers = None if cfg.capture_all_layers else set(cfg.capture_layers or [cfg.layer_for_sae])
@@ -148,6 +149,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     baseline_eval_rows, baseline_summary = evaluate_behavior(
         baseline_rows,
         control_framings=cfg.control_framing_types,
+        refusal_margin=cfg.refusal_margin,
     )
     write_json(Path(log_dir) / "baseline_samples.json", {"samples": baseline_eval_rows})
 
@@ -219,6 +221,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     intervention_eval_rows, intervention_summary = evaluate_behavior(
         intervention_rows,
         control_framings=cfg.control_framing_types,
+        refusal_margin=cfg.refusal_margin,
     )
     write_json(Path(log_dir) / "intervention_samples.json", {"samples": intervention_eval_rows})
     write_jsonl(Path(log_dir) / "prompts.jsonl", prompt_log_rows)

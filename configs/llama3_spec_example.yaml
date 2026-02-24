@@ -8,6 +8,7 @@ max_tokens: 128
 alpha_intervention: 1.0
 seed: 42
 probe_instruction: "Answer with exactly one word: yes or no."
+refusal_margin: 0.5
 capture_attentions: false
 capture_all_layers: false
 capture_layers:

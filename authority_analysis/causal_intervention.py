@@ -81,6 +81,7 @@ def main() -> None:
         "--probe-instruction",
         default="Answer with exactly one word: yes or no.",
     )
+    parser.add_argument("--refusal-margin", type=float, default=0.5)
     args = parser.parse_args()
 
     vector_payload = torch.load(args.direction, map_location="cpu")
@@ -92,6 +93,7 @@ def main() -> None:
         device=args.device,
         dtype=args.dtype,
         probe_instruction=args.probe_instruction,
+        refusal_margin=args.refusal_margin,
     )
     engine = CausalInterventionEngine(mi)
     rows = engine.run(
