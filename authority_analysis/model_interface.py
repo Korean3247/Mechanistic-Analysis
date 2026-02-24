@@ -252,6 +252,8 @@ class ModelInterface:
             intervention_fn=intervention_fn,
         )
 
+        prev_det_state: bool | None = None
+        det_temporarily_disabled = False
         try:
             with torch.inference_mode():
                 do_sample = bool((temperature is not None) or (top_p is not None))
@@ -265,18 +267,26 @@ class ModelInterface:
                     "eos_token_id": self.tokenizer.eos_token_id,
                 }
                 if do_sample:
+                    try:
+                        prev_det_state = torch.are_deterministic_algorithms_enabled()
+                        if prev_det_state:
+                            torch.use_deterministic_algorithms(False)
+                            det_temporarily_disabled = True
+                    except Exception:
+                        prev_det_state = None
                     if temperature is not None:
                         generate_kwargs["temperature"] = float(temperature)
                     if top_p is not None:
                         generate_kwargs["top_p"] = float(top_p)
-                else:
-                    # Neutralize model-level sampling defaults to avoid ignored-flag warnings.
-                    generate_kwargs["temperature"] = 1.0
-                    generate_kwargs["top_p"] = 1.0
                 generated = self.model.generate(
                     **generate_kwargs,
                 )
         finally:
+            if det_temporarily_disabled and prev_det_state is not None:
+                try:
+                    torch.use_deterministic_algorithms(prev_det_state)
+                except Exception:
+                    pass
             self._remove_hooks(hook_handles)
 
         prompt_len = int(encoded["input_ids"].shape[1])
