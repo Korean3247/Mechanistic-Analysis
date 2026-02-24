@@ -31,6 +31,7 @@ class ModelInterface:
         dtype: str = "float16",
         refusal_token: str = " no",
         compliance_token: str = " yes",
+        probe_instruction: str | None = None,
     ) -> None:
         self.model_name = model_name
         self.device = self._resolve_device(device)
@@ -51,6 +52,7 @@ class ModelInterface:
         self.layers = self._decoder_layers()
         self.refusal_token_id = self._resolve_token_id(refusal_token)
         self.compliance_token_id = self._resolve_token_id(compliance_token)
+        self.probe_instruction = probe_instruction.strip() if probe_instruction else None
 
     @staticmethod
     def _resolve_device(device: str) -> torch.device:
@@ -94,7 +96,12 @@ class ModelInterface:
         max_tokens: int = 128,
         intervention_layer: int | None = None,
         intervention_fn: InterventionFn | None = None,
+        capture_layers: set[int] | None = None,
+        capture_attentions: bool = False,
     ) -> ModelForwardArtifacts:
+        if self.probe_instruction:
+            prompt_text = f"{prompt_text.rstrip()}\n\n{self.probe_instruction}"
+
         encoded = self.tokenizer(
             prompt_text,
             return_tensors="pt",
@@ -105,12 +112,24 @@ class ModelInterface:
 
         residual_stream: dict[str, torch.Tensor] = {}
         hook_handles: list[Any] = []
+        capture_all = capture_layers is None
+        capture_layer_set = set(capture_layers or [])
+        hook_layer_set = set(range(len(self.layers))) if capture_all else set(capture_layer_set)
+        if intervention_layer is not None:
+            hook_layer_set.add(intervention_layer)
 
         for layer_idx, layer in enumerate(self.layers):
-            def pre_hook_factory(idx: int) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], Any]:
+            if layer_idx not in hook_layer_set:
+                continue
+            should_capture_layer = capture_all or layer_idx in capture_layer_set
+
+            def pre_hook_factory(
+                idx: int, should_capture: bool
+            ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...]], Any]:
                 def pre_hook(_module: torch.nn.Module, inputs: tuple[torch.Tensor, ...]) -> Any:
                     hidden = inputs[0]
-                    residual_stream[f"blocks.{idx}.hook_resid_pre"] = self._to_fp16_cpu(hidden)
+                    if should_capture:
+                        residual_stream[f"blocks.{idx}.hook_resid_pre"] = self._to_fp16_cpu(hidden)
                     if intervention_layer is not None and intervention_fn is not None and idx == intervention_layer:
                         updated = intervention_fn(hidden)
                         if len(inputs) == 1:
@@ -120,25 +139,29 @@ class ModelInterface:
 
                 return pre_hook
 
-            def post_hook_factory(idx: int) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...], Any], None]:
+            def post_hook_factory(
+                idx: int, should_capture: bool
+            ) -> Callable[[torch.nn.Module, tuple[torch.Tensor, ...], Any], None]:
                 def post_hook(
                     _module: torch.nn.Module,
                     _inputs: tuple[torch.Tensor, ...],
                     output: Any,
                 ) -> None:
+                    if not should_capture:
+                        return
                     hidden = output[0] if isinstance(output, tuple) else output
                     residual_stream[f"blocks.{idx}.hook_resid_post"] = self._to_fp16_cpu(hidden)
 
                 return post_hook
 
-            hook_handles.append(layer.register_forward_pre_hook(pre_hook_factory(layer_idx)))
-            hook_handles.append(layer.register_forward_hook(post_hook_factory(layer_idx)))
+            hook_handles.append(layer.register_forward_pre_hook(pre_hook_factory(layer_idx, should_capture_layer)))
+            hook_handles.append(layer.register_forward_hook(post_hook_factory(layer_idx, should_capture_layer)))
 
         try:
             with torch.inference_mode():
                 outputs = self.model(
                     **encoded,
-                    output_attentions=True,
+                    output_attentions=capture_attentions,
                     use_cache=False,
                 )
         finally:
@@ -153,7 +176,11 @@ class ModelInterface:
         refusal_prob = float(probs[0, self.refusal_token_id].item())
         compliance_prob = float(probs[0, self.compliance_token_id].item())
 
-        attentions = [self._to_fp16_cpu(attn) for attn in (outputs.attentions or [])]
+        attentions = (
+            [self._to_fp16_cpu(attn) for attn in (outputs.attentions or [])]
+            if capture_attentions
+            else []
+        )
 
         return ModelForwardArtifacts(
             residual_stream=residual_stream,

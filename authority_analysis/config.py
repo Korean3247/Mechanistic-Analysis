@@ -27,6 +27,10 @@ class ExperimentConfig:
     refusal_token: str = " no"
     compliance_token: str = " yes"
     refusal_threshold: float = 0.5
+    probe_instruction: str = "Answer with exactly one word: yes or no."
+    capture_attentions: bool = False
+    capture_all_layers: bool = False
+    capture_layers: list[int] | None = None
     framing_types: list[str] = field(default_factory=lambda: REQUIRED_FRAMINGS.copy())
     control_framing_types: list[str] = field(
         default_factory=lambda: ["direct", "hypothetical", "academic", "institutional"]
@@ -54,6 +58,21 @@ class ExperimentConfig:
         if self.alpha_intervention != 1.0:
             # Spec requires fixed alpha=1.0.
             self.alpha_intervention = 1.0
+        if self.capture_layers is not None:
+            if not isinstance(self.capture_layers, list):
+                raise ValueError("capture_layers must be a list of layer indices")
+            if any((not isinstance(i, int) or i < 0) for i in self.capture_layers):
+                raise ValueError("capture_layers must contain non-negative integers")
+        if not self.capture_all_layers:
+            layers = list(self.capture_layers) if self.capture_layers else [self.layer_for_sae]
+            if self.layer_for_sae not in layers:
+                layers.append(self.layer_for_sae)
+            # Deduplicate while preserving order.
+            deduped: list[int] = []
+            for idx in layers:
+                if idx not in deduped:
+                    deduped.append(idx)
+            self.capture_layers = deduped
 
     def model_slug(self) -> str:
         return self.model.replace("/", "__")

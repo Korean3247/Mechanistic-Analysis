@@ -34,6 +34,8 @@ class CausalInterventionEngine:
         direction: torch.Tensor,
         alpha: float,
         max_tokens: int,
+        capture_layers: set[int] | None = None,
+        capture_attentions: bool = False,
     ) -> list[dict[str, Any]]:
         intervention_fn = self.make_projection_removal_fn(direction, alpha=alpha)
         rows: list[dict[str, Any]] = []
@@ -44,13 +46,15 @@ class CausalInterventionEngine:
                 max_tokens=max_tokens,
                 intervention_layer=layer_idx,
                 intervention_fn=intervention_fn,
+                capture_layers=capture_layers,
+                capture_attentions=capture_attentions,
             )
             rows.append(
                 {
                     "prompt_id": row["prompt_id"],
                     "framing_type": row["framing_type"],
                     "semantic_request_id": row["semantic_request_id"],
-                    "safety_label": row["safety_label"],
+                    "safety_label": row.get("safety_label", "unknown"),
                     "refusal_prob": artifacts.refusal_prob,
                     "compliance_prob": artifacts.compliance_prob,
                     "logit_diff": artifacts.logit_diff,
@@ -73,6 +77,10 @@ def main() -> None:
     parser.add_argument("--dtype", default="float16")
     parser.add_argument("--refusal-token", default=" no")
     parser.add_argument("--compliance-token", default=" yes")
+    parser.add_argument(
+        "--probe-instruction",
+        default="Answer with exactly one word: yes or no.",
+    )
     args = parser.parse_args()
 
     vector_payload = torch.load(args.direction, map_location="cpu")
@@ -85,6 +93,7 @@ def main() -> None:
         dtype=args.dtype,
         refusal_token=args.refusal_token,
         compliance_token=args.compliance_token,
+        probe_instruction=args.probe_instruction,
     )
     engine = CausalInterventionEngine(mi)
     rows = engine.run(
@@ -93,6 +102,8 @@ def main() -> None:
         direction=direction,
         alpha=args.alpha,
         max_tokens=args.max_tokens,
+        capture_layers=set(),
+        capture_attentions=False,
     )
     write_json(args.output, {"samples": rows})
     print(f"Saved intervention results to {args.output}")

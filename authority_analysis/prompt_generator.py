@@ -43,6 +43,11 @@ def generate_prompts(
                 full_prompt=full_prompt,
                 safety_label=req.safety_label,
                 risk_level=req.risk_level,
+                domain=req.domain,
+                risk_tier=req.risk_tier,
+                expected_model_behavior=req.expected_model_behavior,
+                rationale_short=req.rationale_short,
+                tags=req.tags,
             )
             validate_prompt_row(prompt.to_dict())
             prompts.append(prompt)

@@ -13,6 +13,11 @@ python scripts/run_experiment.py --config configs/example_experiment.yaml
 
 Recommended Python version is `3.10` to `3.13` for `torch` compatibility.
 
+Default runtime behavior is optimized for disk usage:
+- `capture_attentions: false`
+- `capture_all_layers: false` with `capture_layers: [layer_for_sae]`
+- probing suffix appended at inference time: `Answer with exactly one word: yes or no.`
+
 ## Output Layout
 
 - `activation/<model_name>/<prompt_id>.pt`

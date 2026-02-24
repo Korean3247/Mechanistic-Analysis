@@ -87,12 +87,19 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         dtype=cfg.dtype,
         refusal_token=cfg.refusal_token,
         compliance_token=cfg.compliance_token,
+        probe_instruction=cfg.probe_instruction,
     )
     logger = ActivationLogger(activation_root)
+    capture_layers = None if cfg.capture_all_layers else set(cfg.capture_layers or [cfg.layer_for_sae])
 
     baseline_rows: list[dict[str, Any]] = []
     for row in tqdm(prompt_rows, desc="Collecting activations"):
-        artifacts = model.run_forward(row["full_prompt"], max_tokens=cfg.max_tokens)
+        artifacts = model.run_forward(
+            row["full_prompt"],
+            max_tokens=cfg.max_tokens,
+            capture_layers=capture_layers,
+            capture_attentions=cfg.capture_attentions,
+        )
         logger.save_sample(
             prompt_id=row["prompt_id"],
             artifacts=_artifact_dict_from_forward(artifacts),
@@ -103,7 +110,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 "prompt_id": row["prompt_id"],
                 "framing_type": row["framing_type"],
                 "semantic_request_id": row["semantic_request_id"],
-                "safety_label": row["safety_label"],
+                "safety_label": row.get("safety_label", "unknown"),
                 "refusal_prob": artifacts.refusal_prob,
                 "compliance_prob": artifacts.compliance_prob,
                 "logit_diff": artifacts.logit_diff,
@@ -165,6 +172,8 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         direction=feature_payload["residual_direction_normalized"],
         alpha=cfg.alpha_intervention,
         max_tokens=cfg.max_tokens,
+        capture_attentions=False,
+        capture_layers=set(),
     )
     intervention_eval_rows, intervention_summary = evaluate_behavior(
         intervention_rows,
