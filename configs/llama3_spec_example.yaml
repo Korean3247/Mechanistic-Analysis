@@ -10,10 +10,15 @@ seed: 42
 probe_instruction: "Answer with exactly one word: yes or no."
 refusal_margin: 1.0
 behavioral_ground_truth_samples_per_variant: 0
+behavioral_ground_truth_unsafe_min_per_variant: 0
 behavioral_ground_truth_max_new_tokens: 48
 behavioral_ground_truth_use_probe_instruction: false
 behavioral_ground_truth_temperature: null
 behavioral_ground_truth_top_p: null
+posthoc_margins: [0.5, 1.0, 1.5, 2.0]
+posthoc_bootstrap_iters: 5000
+placebo_modes: []
+placebo_low_importance_features: 32
 capture_attentions: false
 capture_all_layers: false
 capture_layers:

@@ -27,10 +27,15 @@ class ExperimentConfig:
     probe_instruction: str = "Answer with exactly one word: yes or no."
     refusal_margin: float = 1.0
     behavioral_ground_truth_samples_per_variant: int = 0
+    behavioral_ground_truth_unsafe_min_per_variant: int = 0
     behavioral_ground_truth_max_new_tokens: int = 48
     behavioral_ground_truth_use_probe_instruction: bool = False
     behavioral_ground_truth_temperature: float | None = None
     behavioral_ground_truth_top_p: float | None = None
+    posthoc_margins: list[float] = field(default_factory=lambda: [0.5, 1.0, 1.5, 2.0])
+    posthoc_bootstrap_iters: int = 5000
+    placebo_modes: list[str] = field(default_factory=list)
+    placebo_low_importance_features: int = 32
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -60,12 +65,34 @@ class ExperimentConfig:
             raise ValueError("refusal_margin must be >= 0")
         if self.behavioral_ground_truth_samples_per_variant < 0:
             raise ValueError("behavioral_ground_truth_samples_per_variant must be >= 0")
+        if self.behavioral_ground_truth_unsafe_min_per_variant < 0:
+            raise ValueError("behavioral_ground_truth_unsafe_min_per_variant must be >= 0")
+        if (
+            self.behavioral_ground_truth_samples_per_variant > 0
+            and self.behavioral_ground_truth_unsafe_min_per_variant
+            > self.behavioral_ground_truth_samples_per_variant
+        ):
+            raise ValueError(
+                "behavioral_ground_truth_unsafe_min_per_variant cannot exceed "
+                "behavioral_ground_truth_samples_per_variant"
+            )
         if self.behavioral_ground_truth_max_new_tokens < 1:
             raise ValueError("behavioral_ground_truth_max_new_tokens must be >= 1")
         if self.behavioral_ground_truth_temperature is not None and self.behavioral_ground_truth_temperature <= 0:
             raise ValueError("behavioral_ground_truth_temperature must be > 0 when set")
         if self.behavioral_ground_truth_top_p is not None and not (0 < self.behavioral_ground_truth_top_p <= 1):
             raise ValueError("behavioral_ground_truth_top_p must be in (0, 1] when set")
+        if not self.posthoc_margins:
+            raise ValueError("posthoc_margins must include at least one margin value")
+        if any(m < 0 for m in self.posthoc_margins):
+            raise ValueError("posthoc_margins must contain non-negative values")
+        if self.posthoc_bootstrap_iters < 1:
+            raise ValueError("posthoc_bootstrap_iters must be >= 1")
+        valid_placebo_modes = {"random", "low_importance"}
+        if any(mode not in valid_placebo_modes for mode in self.placebo_modes):
+            raise ValueError(f"placebo_modes must be subset of {sorted(valid_placebo_modes)}")
+        if self.placebo_low_importance_features < 1:
+            raise ValueError("placebo_low_importance_features must be >= 1")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:
