@@ -6,6 +6,13 @@ from typing import Any, Callable, Sequence
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .behavior_evaluator import (
+    COMPLIANCE_CUES,
+    REFUSAL_CUES,
+    cue_first_token_ids,
+    cue_scores_from_final_logits,
+)
+
 
 InterventionFn = Callable[[torch.Tensor], torch.Tensor]
 
@@ -15,11 +22,10 @@ class ModelForwardArtifacts:
     residual_stream: dict[str, torch.Tensor]
     attention_outputs: list[torch.Tensor]
     final_logits: torch.Tensor
-    refusal_logit: float
-    compliance_logit: float
-    refusal_prob: float
-    compliance_prob: float
+    refusal_score: float
+    compliance_score: float
     logit_diff: float
+    is_refusal: bool
     prompt_token_count: int
 
 
@@ -29,9 +35,6 @@ class ModelInterface:
         model_name: str,
         device: str = "auto",
         dtype: str = "float16",
-        refusal_token: str = " no",
-        compliance_token: str = " yes",
-        probe_instruction: str | None = None,
     ) -> None:
         self.model_name = model_name
         self.device = self._resolve_device(device)
@@ -50,9 +53,8 @@ class ModelInterface:
         self.model.eval()
 
         self.layers = self._decoder_layers()
-        self.refusal_token_id = self._resolve_token_id(refusal_token)
-        self.compliance_token_id = self._resolve_token_id(compliance_token)
-        self.probe_instruction = probe_instruction.strip() if probe_instruction else None
+        self.refusal_cue_token_ids = cue_first_token_ids(self.tokenizer, REFUSAL_CUES)
+        self.compliance_cue_token_ids = cue_first_token_ids(self.tokenizer, COMPLIANCE_CUES)
 
     @staticmethod
     def _resolve_device(device: str) -> torch.device:
@@ -67,14 +69,6 @@ class ModelInterface:
         if dtype == "bfloat16" and device.type == "cuda":
             return torch.bfloat16
         return torch.float32
-
-    def _resolve_token_id(self, token_text: str) -> int:
-        token_ids = self.tokenizer.encode(token_text, add_special_tokens=False)
-        if not token_ids:
-            raise ValueError(f"Token '{token_text}' produced no token ids")
-        # When multi-token strings are provided, use the first token logit for
-        # deterministic scalar refusal/compliance probing.
-        return token_ids[0]
 
     def _decoder_layers(self) -> Sequence[torch.nn.Module]:
         model = self.model
@@ -99,9 +93,6 @@ class ModelInterface:
         capture_layers: set[int] | None = None,
         capture_attentions: bool = False,
     ) -> ModelForwardArtifacts:
-        if self.probe_instruction:
-            prompt_text = f"{prompt_text.rstrip()}\n\n{self.probe_instruction}"
-
         encoded = self.tokenizer(
             prompt_text,
             return_tensors="pt",
@@ -169,12 +160,11 @@ class ModelInterface:
                 handle.remove()
 
         final_token_logits = outputs.logits[:, -1, :]
-        probs = torch.softmax(final_token_logits, dim=-1)
-
-        refusal_logit = float(final_token_logits[0, self.refusal_token_id].item())
-        compliance_logit = float(final_token_logits[0, self.compliance_token_id].item())
-        refusal_prob = float(probs[0, self.refusal_token_id].item())
-        compliance_prob = float(probs[0, self.compliance_token_id].item())
+        scores = cue_scores_from_final_logits(
+            final_logits=final_token_logits,
+            refusal_token_ids=self.refusal_cue_token_ids,
+            compliance_token_ids=self.compliance_cue_token_ids,
+        )
 
         attentions = (
             [self._to_fp16_cpu(attn) for attn in (outputs.attentions or [])]
@@ -186,10 +176,9 @@ class ModelInterface:
             residual_stream=residual_stream,
             attention_outputs=attentions,
             final_logits=self._to_fp16_cpu(final_token_logits),
-            refusal_logit=refusal_logit,
-            compliance_logit=compliance_logit,
-            refusal_prob=refusal_prob,
-            compliance_prob=compliance_prob,
-            logit_diff=refusal_logit - compliance_logit,
+            refusal_score=float(scores["refusal_score"]),
+            compliance_score=float(scores["compliance_score"]),
+            logit_diff=float(scores["logit_diff"]),
+            is_refusal=bool(scores["is_refusal"]),
             prompt_token_count=int(encoded["input_ids"].shape[1]),
         )

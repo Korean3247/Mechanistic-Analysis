@@ -7,9 +7,6 @@ batch_size: 16
 max_tokens: 128
 alpha_intervention: 1.0
 seed: 42
-refusal_token: " no"
-compliance_token: " yes"
-probe_instruction: "Answer with exactly one word: yes or no."
 capture_attentions: false
 capture_all_layers: false
 capture_layers:

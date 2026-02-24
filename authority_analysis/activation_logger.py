@@ -24,17 +24,17 @@ class ActivationLogger:
             "framing_type": metadata.get("framing_type", "unknown"),
             "semantic_request_id": metadata.get("semantic_request_id", "unknown"),
             "safety_label": metadata.get("safety_label", "unknown"),
+            "risk_tier": metadata.get("risk_tier", "unknown"),
             "risk_level": metadata.get("risk_level", "controlled"),
         }
         payload = {
             "residual_stream": artifacts["residual_stream"],
             "attention_outputs": artifacts["attention_outputs"],
             "final_logits": artifacts["final_logits"],
-            "refusal_logit": float(artifacts["refusal_logit"]),
-            "compliance_logit": float(artifacts["compliance_logit"]),
-            "refusal_prob": float(artifacts["refusal_prob"]),
-            "compliance_prob": float(artifacts["compliance_prob"]),
+            "refusal_score": float(artifacts["refusal_score"]),
+            "compliance_score": float(artifacts["compliance_score"]),
             "logit_diff": float(artifacts["logit_diff"]),
+            "is_refusal": bool(artifacts["is_refusal"]),
             "metadata": safe_meta,
         }
         out_path = self.activation_root / f"{prompt_id}.pt"

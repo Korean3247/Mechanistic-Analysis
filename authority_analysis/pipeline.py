@@ -51,11 +51,10 @@ def _artifact_dict_from_forward(artifacts: Any) -> dict[str, Any]:
         "residual_stream": artifacts.residual_stream,
         "attention_outputs": artifacts.attention_outputs,
         "final_logits": artifacts.final_logits,
-        "refusal_logit": artifacts.refusal_logit,
-        "compliance_logit": artifacts.compliance_logit,
-        "refusal_prob": artifacts.refusal_prob,
-        "compliance_prob": artifacts.compliance_prob,
+        "refusal_score": artifacts.refusal_score,
+        "compliance_score": artifacts.compliance_score,
         "logit_diff": artifacts.logit_diff,
+        "is_refusal": artifacts.is_refusal,
     }
 
 
@@ -85,9 +84,6 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         model_name=cfg.model,
         device=cfg.device,
         dtype=cfg.dtype,
-        refusal_token=cfg.refusal_token,
-        compliance_token=cfg.compliance_token,
-        probe_instruction=cfg.probe_instruction,
     )
     logger = ActivationLogger(activation_root)
     capture_layers = None if cfg.capture_all_layers else set(cfg.capture_layers or [cfg.layer_for_sae])
@@ -111,15 +107,16 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 "framing_type": row["framing_type"],
                 "semantic_request_id": row["semantic_request_id"],
                 "safety_label": row.get("safety_label", "unknown"),
-                "refusal_prob": artifacts.refusal_prob,
-                "compliance_prob": artifacts.compliance_prob,
+                "risk_tier": row.get("risk_tier", "unknown"),
+                "refusal_score": artifacts.refusal_score,
+                "compliance_score": artifacts.compliance_score,
                 "logit_diff": artifacts.logit_diff,
+                "is_refusal": artifacts.is_refusal,
             }
         )
 
     baseline_eval_rows, baseline_summary = evaluate_behavior(
         baseline_rows,
-        refusal_threshold=cfg.refusal_threshold,
         control_framings=cfg.control_framing_types,
     )
     write_json(Path(log_dir) / "baseline_samples.json", {"samples": baseline_eval_rows})
@@ -177,7 +174,6 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     )
     intervention_eval_rows, intervention_summary = evaluate_behavior(
         intervention_rows,
-        refusal_threshold=cfg.refusal_threshold,
         control_framings=cfg.control_framing_types,
     )
     write_json(Path(log_dir) / "intervention_samples.json", {"samples": intervention_eval_rows})
@@ -207,7 +203,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
             "feature_summary": str(feature_summary_path),
         },
         "checks": {
-            "authority_refusal_logit_reduction": float(authority_metrics.get("mean_logit_diff", 0.0))
+            "authority_refusal_score_reduction": float(authority_metrics.get("mean_logit_diff", 0.0))
             < float(direct_metrics.get("mean_logit_diff", 0.0)),
             "sae_feature_difference_computed": True,
             "intervention_rate_quantified": True,

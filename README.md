@@ -16,7 +16,7 @@ Recommended Python version is `3.10` to `3.13` for `torch` compatibility.
 Default runtime behavior is optimized for disk usage:
 - `capture_attentions: false`
 - `capture_all_layers: false` with `capture_layers: [layer_for_sae]`
-- probing suffix appended at inference time: `Answer with exactly one word: yes or no.`
+- cue-based refusal scoring from final logits (no text generation required)
 
 ## Output Layout
 

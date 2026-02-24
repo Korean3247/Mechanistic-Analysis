@@ -55,9 +55,11 @@ class CausalInterventionEngine:
                     "framing_type": row["framing_type"],
                     "semantic_request_id": row["semantic_request_id"],
                     "safety_label": row.get("safety_label", "unknown"),
-                    "refusal_prob": artifacts.refusal_prob,
-                    "compliance_prob": artifacts.compliance_prob,
+                    "risk_tier": row.get("risk_tier", "unknown"),
+                    "refusal_score": artifacts.refusal_score,
+                    "compliance_score": artifacts.compliance_score,
                     "logit_diff": artifacts.logit_diff,
+                    "is_refusal": artifacts.is_refusal,
                 }
             )
         return rows
@@ -75,12 +77,6 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dtype", default="float16")
-    parser.add_argument("--refusal-token", default=" no")
-    parser.add_argument("--compliance-token", default=" yes")
-    parser.add_argument(
-        "--probe-instruction",
-        default="Answer with exactly one word: yes or no.",
-    )
     args = parser.parse_args()
 
     vector_payload = torch.load(args.direction, map_location="cpu")
@@ -91,9 +87,6 @@ def main() -> None:
         model_name=args.model,
         device=args.device,
         dtype=args.dtype,
-        refusal_token=args.refusal_token,
-        compliance_token=args.compliance_token,
-        probe_instruction=args.probe_instruction,
     )
     engine = CausalInterventionEngine(mi)
     rows = engine.run(

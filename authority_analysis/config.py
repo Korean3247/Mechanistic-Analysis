@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +24,6 @@ class ExperimentConfig:
     seed: int = 42
     device: str = "auto"
     dtype: str = "float16"
-    refusal_token: str = " no"
-    compliance_token: str = " yes"
-    refusal_threshold: float = 0.5
-    probe_instruction: str = "Answer with exactly one word: yes or no."
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -51,8 +47,6 @@ class ExperimentConfig:
             raise ValueError(f"framing_types is missing required entries: {missing}")
         if "authority" not in self.framing_types:
             raise ValueError("framing_types must include 'authority'")
-        if not (0.0 <= self.refusal_threshold <= 1.0):
-            raise ValueError("refusal_threshold must be between 0 and 1")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention != 1.0:
@@ -98,6 +92,8 @@ def load_config(path: str | Path) -> ExperimentConfig:
         payload = yaml.safe_load(f)
     if not isinstance(payload, dict):
         raise ValueError("Config YAML must contain a mapping at top level")
-    cfg = ExperimentConfig(**payload)
+    valid_keys = {f.name for f in dataclass_fields(ExperimentConfig)}
+    filtered_payload = {k: v for k, v in payload.items() if k in valid_keys}
+    cfg = ExperimentConfig(**filtered_payload)
     cfg.validate()
     return cfg
