@@ -12,7 +12,7 @@ from authority_analysis.behavior_evaluator import COMPLIANCE_CUES, REFUSAL_CUES
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sanity check tokenization for probe labels and cues")
-    parser.add_argument("--model", default="meta-llama/Llama-3-8B-Instruct")
+    parser.add_argument("--model", default="meta-llama/Meta-Llama-3-8B-Instruct")
     args = parser.parse_args()
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)

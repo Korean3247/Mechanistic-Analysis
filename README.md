@@ -11,6 +11,15 @@ pip install -e .
 python scripts/run_experiment.py --config configs/example_experiment.yaml
 ```
 
+Llama-3 Instruct model id (used in this repo):
+- `meta-llama/Meta-Llama-3-8B-Instruct`
+
+Sanity check example:
+
+```bash
+python scripts/sanity_check_tokens.py --model meta-llama/Meta-Llama-3-8B-Instruct
+```
+
 Recommended Python version is `3.10` to `3.13` for `torch` compatibility.
 
 Default runtime behavior is optimized for disk usage:

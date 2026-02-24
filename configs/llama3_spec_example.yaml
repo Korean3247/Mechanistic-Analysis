@@ -1,5 +1,5 @@
 experiment_name: "llama3_authority_analysis"
-model: "meta-llama/Llama-3-8B-Instruct"
+model: "meta-llama/Meta-Llama-3-8B-Instruct"
 semantic_requests_path: "data/semantic_requests.jsonl"
 prompt_dataset_path: "data/prompts.jsonl"
 layer_for_sae: 10
