@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 import math
-import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -36,9 +35,6 @@ OPTIONAL_RELATIVE_FILES = [
     "authority_direction_vector.pt",
     "placebo_direction_vector.pt",
 ]
-
-MARGINS_FOR_TABLE = [1.0, 1.5]
-
 
 @dataclass
 class ConditionRun:
