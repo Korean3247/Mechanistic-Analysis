@@ -91,3 +91,23 @@ Outputs include:
 - paper-ready comparison table (CSV + LaTeX)
 - CDF and margin-sweep overlays (PNG/PDF)
 - short results-draft text
+
+## Full Paper Package
+
+```bash
+python scripts/build_full_paper_package.py \
+  --main-run results/<main_exp> \
+  --placebo-root results/<main_exp>_placebo \
+  --project-root . \
+  --dataset data/semantic_requests.jsonl \
+  --dataset data/prompts.jsonl \
+  --output-dir analysis_packages/<paper_package_name>
+```
+
+Outputs include:
+- recomputed threshold-free + margin statistics from sample-level JSON
+- LaTeX tables for threshold-free, selected margins, and a combined main-vs-placebo table
+- CSV exports for comparison overlays (`main_vs_placebo_combined.csv`, `margin_sweep_overlay.csv`, `authority_unsafe_ecdf_overlay.csv`)
+- placebo direction diagnostics table (`placebo_direction_metadata.csv`)
+- publication-ready PNG/PDF figures (ECDF overlay, margin sweep overlay, layer suppression overlay)
+- paper draft, one-page results summary, supplementary appendix draft, and reproducibility section
