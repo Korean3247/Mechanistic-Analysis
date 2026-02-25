@@ -71,3 +71,23 @@ python scripts/posthoc_margin_analysis.py \
   --behavioral-gt-jsonl results/<exp>/logs/behavioral_ground_truth.jsonl \
   --out-dir results/<exp>/posthoc
 ```
+
+## Final Comparison Package
+
+```bash
+python scripts/build_final_analysis_package.py \
+  --main-run results/<main_exp> \
+  --placebo-root results/<main_exp>_placebo \
+  --project-root . \
+  --dataset data/semantic_requests.jsonl \
+  --dataset data/prompts.jsonl \
+  --output-dir analysis_packages/<package_name>
+```
+
+Outputs include:
+- collected reproducibility artifacts (run manifests, configs, dataset checksums)
+- sample-level originals (`baseline_samples.json`, `intervention_samples.json`) per condition
+- placebo direction metadata summary
+- paper-ready comparison table (CSV + LaTeX)
+- CDF and margin-sweep overlays (PNG/PDF)
+- short results-draft text
