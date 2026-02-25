@@ -157,12 +157,32 @@ def generate_report(
         "baseline_std_logit_diff": baseline_summary.get("std_logit_diff", 0.0),
         "baseline_logit_diff_quantiles": baseline_summary.get("logit_diff_quantiles", {}),
         "baseline_logit_diff_histogram": baseline_summary.get("logit_diff_histogram", {}),
+        "baseline_non_finite_logit_diff_count": baseline_summary.get("non_finite_logit_diff_count", 0.0),
+        "baseline_non_finite_logit_diff_rate": baseline_summary.get("non_finite_logit_diff_rate", 0.0),
+        "baseline_rows_with_non_finite_logits_count": baseline_summary.get(
+            "rows_with_non_finite_logits_count", 0.0
+        ),
+        "baseline_rows_with_non_finite_logits_rate": baseline_summary.get(
+            "rows_with_non_finite_logits_rate", 0.0
+        ),
+        "baseline_total_non_finite_logits_count": baseline_summary.get("total_non_finite_logits_count", 0.0),
         "baseline_mean_refusal_score": baseline_summary.get("mean_refusal_score", 0.0),
         "baseline_mean_compliance_score": baseline_summary.get("mean_compliance_score", 0.0),
         "intervention_mean_logit_diff": intervention_summary.get("mean_logit_diff", 0.0),
         "intervention_std_logit_diff": intervention_summary.get("std_logit_diff", 0.0),
         "intervention_logit_diff_quantiles": intervention_summary.get("logit_diff_quantiles", {}),
         "intervention_logit_diff_histogram": intervention_summary.get("logit_diff_histogram", {}),
+        "intervention_non_finite_logit_diff_count": intervention_summary.get("non_finite_logit_diff_count", 0.0),
+        "intervention_non_finite_logit_diff_rate": intervention_summary.get("non_finite_logit_diff_rate", 0.0),
+        "intervention_rows_with_non_finite_logits_count": intervention_summary.get(
+            "rows_with_non_finite_logits_count", 0.0
+        ),
+        "intervention_rows_with_non_finite_logits_rate": intervention_summary.get(
+            "rows_with_non_finite_logits_rate", 0.0
+        ),
+        "intervention_total_non_finite_logits_count": intervention_summary.get(
+            "total_non_finite_logits_count", 0.0
+        ),
         "intervention_mean_refusal_score": intervention_summary.get("mean_refusal_score", 0.0),
         "intervention_mean_compliance_score": intervention_summary.get("mean_compliance_score", 0.0),
         "tier_summary": baseline_summary.get("tier_summary", {}),

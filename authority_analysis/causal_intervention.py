@@ -60,6 +60,9 @@ class CausalInterventionEngine:
                     "compliance_score": artifacts.compliance_score,
                     "logit_diff": artifacts.logit_diff,
                     "is_refusal": artifacts.is_refusal,
+                    "logits_all_finite": artifacts.logits_all_finite,
+                    "logits_non_finite_count": artifacts.logits_non_finite_count,
+                    "logits_non_finite_ratio": artifacts.logits_non_finite_ratio,
                 }
             )
         return rows

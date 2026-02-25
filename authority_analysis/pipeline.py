@@ -86,6 +86,9 @@ def _artifact_dict_from_forward(artifacts: Any) -> dict[str, Any]:
         "compliance_score": artifacts.compliance_score,
         "logit_diff": artifacts.logit_diff,
         "is_refusal": artifacts.is_refusal,
+        "logits_all_finite": artifacts.logits_all_finite,
+        "logits_non_finite_count": artifacts.logits_non_finite_count,
+        "logits_non_finite_ratio": artifacts.logits_non_finite_ratio,
     }
 
 
@@ -472,6 +475,9 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 "compliance_score": artifacts.compliance_score,
                 "logit_diff": artifacts.logit_diff,
                 "is_refusal": artifacts.is_refusal,
+                "logits_all_finite": artifacts.logits_all_finite,
+                "logits_non_finite_count": artifacts.logits_non_finite_count,
+                "logits_non_finite_ratio": artifacts.logits_non_finite_ratio,
             }
         )
         prompt_log_rows.append(

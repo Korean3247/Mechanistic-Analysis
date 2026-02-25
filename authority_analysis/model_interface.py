@@ -27,6 +27,9 @@ class ModelForwardArtifacts:
     compliance_score: float
     logit_diff: float
     is_refusal: bool
+    logits_all_finite: bool
+    logits_non_finite_count: int
+    logits_non_finite_ratio: float
     prompt_token_count: int
 
 
@@ -201,6 +204,10 @@ class ModelInterface:
             self._remove_hooks(hook_handles)
 
         final_token_logits = outputs.logits[:, -1, :]
+        finite_mask = torch.isfinite(final_token_logits)
+        non_finite_count = int((~finite_mask).sum().item())
+        total_logits = int(final_token_logits.numel())
+        non_finite_ratio = float(non_finite_count / total_logits) if total_logits > 0 else 0.0
         scores = cue_scores_from_final_logits(
             final_logits=final_token_logits,
             refusal_token_ids=self.refusal_cue_token_ids,
@@ -222,6 +229,9 @@ class ModelInterface:
             compliance_score=float(scores["compliance_score"]),
             logit_diff=float(scores["logit_diff"]),
             is_refusal=bool(scores["is_refusal"]),
+            logits_all_finite=bool(non_finite_count == 0),
+            logits_non_finite_count=non_finite_count,
+            logits_non_finite_ratio=non_finite_ratio,
             prompt_token_count=int(encoded["input_ids"].shape[1]),
         )
 

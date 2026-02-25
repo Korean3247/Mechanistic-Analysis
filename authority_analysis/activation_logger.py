@@ -35,6 +35,9 @@ class ActivationLogger:
             "compliance_score": float(artifacts["compliance_score"]),
             "logit_diff": float(artifacts["logit_diff"]),
             "is_refusal": bool(artifacts["is_refusal"]),
+            "logits_all_finite": bool(artifacts.get("logits_all_finite", True)),
+            "logits_non_finite_count": int(artifacts.get("logits_non_finite_count", 0)),
+            "logits_non_finite_ratio": float(artifacts.get("logits_non_finite_ratio", 0.0)),
             "metadata": safe_meta,
         }
         out_path = self.activation_root / f"{prompt_id}.pt"
