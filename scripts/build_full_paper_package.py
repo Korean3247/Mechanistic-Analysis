@@ -806,7 +806,11 @@ def _make_main_vs_placebo_rows(
                 "wasserstein_1": t.get("wasserstein_1", 0.0),
                 "cliffs_delta": t.get("cliffs_delta", 0.0),
                 "delta_refusal_rate_margin_1_0": m.get("delta_m1_0", 0.0),
+                "delta_refusal_rate_margin_1_0_ci95_low": m.get("delta_m1_0_ci95_low", 0.0),
+                "delta_refusal_rate_margin_1_0_ci95_high": m.get("delta_m1_0_ci95_high", 0.0),
                 "delta_refusal_rate_margin_1_5": m.get("delta_m1_5", 0.0),
+                "delta_refusal_rate_margin_1_5_ci95_low": m.get("delta_m1_5_ci95_low", 0.0),
+                "delta_refusal_rate_margin_1_5_ci95_high": m.get("delta_m1_5_ci95_high", 0.0),
                 "n_paired_authority_unsafe": t.get("n_paired_authority_unsafe", 0),
             }
         )
@@ -949,12 +953,20 @@ def _write_latex_tables(
         "\\begin{table}[t]",
         "\\centering",
         "\\small",
-        "\\begin{tabular}{lrrrrrrrr}",
+        "\\begin{tabular}{lrrrrrrr}",
         "\\hline",
-        "Condition & Mean Shift & Median Shift & Sign p & KS D & W1 & Cliff's $\\delta$ & $\\Delta$Ref@1.0 & $\\Delta$Ref@1.5 \\\\",
+        "Condition & Mean Shift & Median Shift & Sign p & KS D & W1 & $\\Delta$Ref@1.0 (95\\% CI) & $\\Delta$Ref@1.5 (95\\% CI) \\\\",
         "\\hline",
     ]
     for r in combined_rows:
+        m10 = (
+            f"{_fmt(r['delta_refusal_rate_margin_1_0'])} "
+            f"[{_fmt(r['delta_refusal_rate_margin_1_0_ci95_low'])}, {_fmt(r['delta_refusal_rate_margin_1_0_ci95_high'])}]"
+        )
+        m15 = (
+            f"{_fmt(r['delta_refusal_rate_margin_1_5'])} "
+            f"[{_fmt(r['delta_refusal_rate_margin_1_5_ci95_low'])}, {_fmt(r['delta_refusal_rate_margin_1_5_ci95_high'])}]"
+        )
         combined_lines.append(
             f"{r['condition_label']} & "
             f"{_fmt(r['mean_shift'])} & "
@@ -962,9 +974,8 @@ def _write_latex_tables(
             f"{_fmt(r['sign_test_p_value'])} & "
             f"{_fmt(r['ks_d_stat'])} & "
             f"{_fmt(r['wasserstein_1'])} & "
-            f"{_fmt(r['cliffs_delta'])} & "
-            f"{_fmt(r['delta_refusal_rate_margin_1_0'])} & "
-            f"{_fmt(r['delta_refusal_rate_margin_1_5'])} \\\\"
+            f"{m10} & "
+            f"{m15} \\\\"
         )
     combined_lines.extend(
         [
@@ -1393,7 +1404,11 @@ def _build_output_package(args: argparse.Namespace) -> Path:
             "wasserstein_1",
             "cliffs_delta",
             "delta_refusal_rate_margin_1_0",
+            "delta_refusal_rate_margin_1_0_ci95_low",
+            "delta_refusal_rate_margin_1_0_ci95_high",
             "delta_refusal_rate_margin_1_5",
+            "delta_refusal_rate_margin_1_5_ci95_low",
+            "delta_refusal_rate_margin_1_5_ci95_high",
             "n_paired_authority_unsafe",
         ],
         combined_rows,
