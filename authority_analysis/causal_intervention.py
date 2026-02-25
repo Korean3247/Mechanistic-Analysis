@@ -17,14 +17,62 @@ class CausalInterventionEngine:
     @staticmethod
     def make_projection_removal_fn(direction: torch.Tensor, alpha: float = 1.0):
         direction = direction.detach().to(dtype=torch.float32)
+        direction_is_finite = bool(torch.isfinite(direction).all().item())
+        direction_l2 = float(torch.linalg.norm(direction).item()) if direction_is_finite else 0.0
+        degenerate_direction = (not direction_is_finite) or direction_l2 <= 1e-12
+
+        if degenerate_direction:
+            stats = {
+                "direction_is_finite": direction_is_finite,
+                "direction_l2": direction_l2,
+                "degenerate_direction": True,
+                "calls": 0,
+                "non_finite_coeff_calls": 0,
+                "non_finite_output_calls": 0,
+                "identity_fallback_calls": 0,
+            }
+
+            def identity(hidden: torch.Tensor) -> torch.Tensor:
+                stats["calls"] += 1
+                stats["identity_fallback_calls"] += 1
+                return hidden
+
+            setattr(identity, "_debug_stats", stats)
+            return identity
+
+        stats = {
+            "direction_is_finite": True,
+            "direction_l2": direction_l2,
+            "degenerate_direction": False,
+            "calls": 0,
+            "non_finite_coeff_calls": 0,
+            "non_finite_output_calls": 0,
+            "identity_fallback_calls": 0,
+        }
+        alpha_f = float(alpha)
+        eps = 1e-12
 
         def intervention(hidden: torch.Tensor) -> torch.Tensor:
-            d = direction.to(device=hidden.device, dtype=hidden.dtype)
-            denom = torch.sum(d * d) + 1e-8
-            coeff = torch.sum(hidden * d, dim=-1, keepdim=True) / denom
-            projected = coeff * d
-            return hidden - alpha * projected
+            stats["calls"] += 1
+            d = direction.to(device=hidden.device, dtype=torch.float32)
+            hidden_f32 = hidden.to(dtype=torch.float32)
+            denom = torch.sum(d * d).clamp_min(eps)
+            coeff = torch.sum(hidden_f32 * d, dim=-1, keepdim=True) / denom
+            if not torch.isfinite(coeff).all():
+                stats["non_finite_coeff_calls"] += 1
+                stats["identity_fallback_calls"] += 1
+                return hidden
 
+            projected = coeff * d
+            updated = hidden_f32 - alpha_f * projected
+            if not torch.isfinite(updated).all():
+                stats["non_finite_output_calls"] += 1
+                stats["identity_fallback_calls"] += 1
+                return hidden
+
+            return updated.to(dtype=hidden.dtype)
+
+        setattr(intervention, "_debug_stats", stats)
         return intervention
 
     def run(
@@ -63,6 +111,27 @@ class CausalInterventionEngine:
                     "logits_all_finite": artifacts.logits_all_finite,
                     "logits_non_finite_count": artifacts.logits_non_finite_count,
                     "logits_non_finite_ratio": artifacts.logits_non_finite_ratio,
+                    "intervention_direction_is_finite": bool(
+                        getattr(intervention_fn, "_debug_stats", {}).get("direction_is_finite", True)
+                    ),
+                    "intervention_direction_l2": float(
+                        getattr(intervention_fn, "_debug_stats", {}).get("direction_l2", 0.0)
+                    ),
+                    "intervention_degenerate_direction": bool(
+                        getattr(intervention_fn, "_debug_stats", {}).get("degenerate_direction", False)
+                    ),
+                    "intervention_total_calls": int(
+                        getattr(intervention_fn, "_debug_stats", {}).get("calls", 0)
+                    ),
+                    "intervention_identity_fallback_calls": int(
+                        getattr(intervention_fn, "_debug_stats", {}).get("identity_fallback_calls", 0)
+                    ),
+                    "intervention_non_finite_coeff_calls": int(
+                        getattr(intervention_fn, "_debug_stats", {}).get("non_finite_coeff_calls", 0)
+                    ),
+                    "intervention_non_finite_output_calls": int(
+                        getattr(intervention_fn, "_debug_stats", {}).get("non_finite_output_calls", 0)
+                    ),
                 }
             )
         return rows

@@ -240,7 +240,12 @@ def _summarize_behavioral_ground_truth(rows: list[dict[str, Any]]) -> dict[str, 
 
 def _normalize_direction(vec: torch.Tensor) -> torch.Tensor:
     v = vec.detach().to(dtype=torch.float32, device="cpu")
-    return v / (torch.linalg.norm(v) + 1e-8)
+    if not bool(torch.isfinite(v).all().item()):
+        return torch.zeros_like(v)
+    norm = torch.linalg.norm(v)
+    if float(norm.item()) <= 1e-12:
+        return torch.zeros_like(v)
+    return v / norm
 
 
 def _build_placebo_direction(
@@ -266,18 +271,35 @@ def _build_placebo_direction(
     if mode == "low_importance":
         latent_direction = feature_payload["latent_direction"].detach().to(dtype=torch.float32, device="cpu")
         decoder_weight = sae_model.decoder.weight.detach().to(dtype=torch.float32, device="cpu")
-        k = min(low_feature_count, int(latent_direction.numel()))
-        low_indices = torch.argsort(torch.abs(latent_direction))[:k]
+        requested_k = min(low_feature_count, int(latent_direction.numel()))
+        abs_latent = torch.abs(latent_direction)
+        nonzero_idx = torch.where(abs_latent > 0)[0]
+        if int(nonzero_idx.numel()) > 0:
+            sorted_nonzero = nonzero_idx[torch.argsort(abs_latent[nonzero_idx])]
+            low_indices = sorted_nonzero[:requested_k]
+        else:
+            low_indices = torch.argsort(abs_latent)[:requested_k]
+        selected_k = int(low_indices.numel())
         low_latent = torch.zeros_like(latent_direction)
-        low_latent[low_indices] = latent_direction[low_indices]
+        if selected_k > 0:
+            low_latent[low_indices] = latent_direction[low_indices]
         residual = torch.matmul(low_latent, decoder_weight.T)
         direction = _normalize_direction(residual)
+        residual_l2 = float(torch.linalg.norm(residual).item()) if bool(torch.isfinite(residual).all().item()) else 0.0
+        direction_is_finite = bool(torch.isfinite(direction).all().item())
+        direction_l2 = float(torch.linalg.norm(direction).item()) if direction_is_finite else 0.0
         return direction, {
             "placebo_mode": "low_importance",
-            "low_feature_count": int(k),
+            "low_feature_count_requested": int(requested_k),
+            "low_feature_count_selected": int(selected_k),
             "low_feature_indices": [int(i) for i in low_indices.tolist()],
             "latent_l2": float(torch.linalg.norm(low_latent).item()),
-            "actual_norm": float(torch.linalg.norm(direction).item()),
+            "low_latent_nonzero_count": int(torch.count_nonzero(low_latent).item()),
+            "residual_l2_before_normalize": residual_l2,
+            "residual_is_finite": bool(torch.isfinite(residual).all().item()),
+            "actual_norm": direction_l2,
+            "direction_is_finite": direction_is_finite,
+            "direction_is_degenerate": bool(direction_l2 <= 1e-12),
         }
 
     raise ValueError(f"Unsupported placebo mode: {mode}")
