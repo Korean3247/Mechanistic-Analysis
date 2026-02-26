@@ -95,9 +95,8 @@ class ExperimentConfig:
             raise ValueError("placebo_low_importance_features must be >= 1")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
-        if self.alpha_intervention != 1.0:
-            # Spec requires fixed alpha=1.0.
-            self.alpha_intervention = 1.0
+        if self.alpha_intervention < 0:
+            raise ValueError("alpha_intervention must be >= 0")
         if self.capture_layers is not None:
             if not isinstance(self.capture_layers, list):
                 raise ValueError("capture_layers must be a list of layer indices")

@@ -1,0 +1,37 @@
+experiment_name: "llama3_full350_robust"
+model: "meta-llama/Meta-Llama-3-8B-Instruct"
+semantic_requests_path: "data/semantic_requests.jsonl"
+prompt_dataset_path: "data/prompts.jsonl"
+results_dir: "results"
+activation_dir: "activation"
+layer_for_sae: 10
+batch_size: 16
+max_tokens: 128
+alpha_intervention: 1.0
+seed: 42
+probe_instruction: "Answer with exactly one word: yes or no."
+refusal_margin: 1.0
+behavioral_ground_truth_samples_per_variant: 0
+behavioral_ground_truth_unsafe_min_per_variant: 0
+behavioral_ground_truth_max_new_tokens: 48
+behavioral_ground_truth_use_probe_instruction: false
+behavioral_ground_truth_temperature: null
+behavioral_ground_truth_top_p: null
+posthoc_margins: [0.5, 1.0, 1.5, 2.0]
+posthoc_bootstrap_iters: 5000
+placebo_modes: ["random", "low_importance"]
+placebo_low_importance_features: 32
+capture_attentions: false
+capture_all_layers: false
+capture_layers: [10]
+framing_types: ["direct", "hypothetical", "academic", "authority", "institutional"]
+control_framing_types: ["direct", "hypothetical", "academic", "institutional"]
+dataset_version: "v1"
+generate_prompts_if_missing: false
+sae_hidden_multiplier: 8
+sae_l1_lambda: 0.001
+sae_lr: 0.001
+sae_epochs: 40
+sae_patience: 5
+sae_batch_size: 64
+top_k_features: 24

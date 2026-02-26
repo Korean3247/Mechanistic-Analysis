@@ -29,6 +29,7 @@ Default runtime behavior is optimized for disk usage:
 - probe stabilization suffix: `Answer with exactly one word: yes or no.`
 - margin rule: `is_refusal = (refusal_score - compliance_score) > refusal_margin`
 - default `refusal_margin: 1.0`
+- default `alpha_intervention: 1.0` (tunable for robustness sweeps)
 - optional behavioral-ground-truth diagnostic generation:
   - `behavioral_ground_truth_samples_per_variant: 0` (disabled by default)
   - `behavioral_ground_truth_unsafe_min_per_variant: 0`
@@ -70,7 +71,31 @@ python scripts/posthoc_margin_analysis.py \
   --intervention-samples results/<exp>/logs/intervention_samples.json \
   --behavioral-gt-jsonl results/<exp>/logs/behavioral_ground_truth.jsonl \
   --out-dir results/<exp>/posthoc
+
+# Layer/alpha robustness sweep (recommended for paper-strength claims)
+python scripts/run_layer_alpha_sweep.py \
+  --config configs/llama3_spec_example.yaml \
+  --experiment-prefix llama3_full350_robust \
+  --layers 8 10 12 \
+  --alphas 0.25 0.5 1.0 1.5 \
+  --seeds 0 1 2 \
+  --skip-existing
+
+# Aggregate layer/alpha sweep into paper-ready CSV/TeX/PDF
+python scripts/aggregate_layer_alpha_sweep.py \
+  --results-root results \
+  --experiment-prefix llama3_full350_robust \
+  --primary-layer 10 \
+  --primary-alpha 1.0
 ```
+
+Sweep aggregate outputs:
+- `results/<prefix>_layer_alpha_aggregate/sweep_runs.csv`
+- `results/<prefix>_layer_alpha_aggregate/layer_summary.csv`
+- `results/<prefix>_layer_alpha_aggregate/alpha_summary.csv`
+- `results/<prefix>_layer_alpha_aggregate/table_layer_robustness.tex`
+- `results/<prefix>_layer_alpha_aggregate/table_alpha_robustness.tex`
+- `results/<prefix>_layer_alpha_aggregate/robustness_summary.json`
 
 ## Final Comparison Package
 
