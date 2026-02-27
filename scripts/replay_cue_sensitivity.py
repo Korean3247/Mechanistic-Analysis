@@ -217,6 +217,10 @@ def _sort_rank(label: str) -> tuple[int, str]:
     return (order.get(label, 99), label)
 
 
+def _latex_escape_texttt(value: str) -> str:
+    return value.replace("\\", "\\textbackslash{}").replace("_", "\\_")
+
+
 def _write_latex_table(path: Path, rows: list[dict[str, Any]], cue_name: str) -> None:
     lines = [
         "\\begin{table}[t]",
@@ -241,7 +245,7 @@ def _write_latex_table(path: Path, rows: list[dict[str, Any]], cue_name: str) ->
             "\\end{tabular}",
             (
                 "\\caption{Cue-sensitivity replay with the "
-                f"\\texttt{{{cue_name}}} cue set. All runs reuse saved direction vectors and rerun only "
+                f"\\texttt{{{_latex_escape_texttt(cue_name)}}} cue set. All runs reuse saved direction vectors and rerun only "
                 "baseline/intervention forward passes.}"
             ),
             "\\label{tab:cue_sensitivity_replay}",
