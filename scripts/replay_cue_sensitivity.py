@@ -206,6 +206,17 @@ def _format_label(label: str) -> str:
     return mapping.get(label, label.replace("_", " ").title())
 
 
+def _sort_rank(label: str) -> tuple[int, str]:
+    order = {
+        "main": 0,
+        "random": 1,
+        "low_importance": 2,
+        "orthogonal": 3,
+        "shuffled_latent": 4,
+    }
+    return (order.get(label, 99), label)
+
+
 def _write_latex_table(path: Path, rows: list[dict[str, Any]], cue_name: str) -> None:
     lines = [
         "\\begin{table}[t]",
@@ -404,7 +415,7 @@ def main() -> None:
         )
         summary_rows.append(_summary_row(label=spec.label, cue_name=cue_name, report=report))
 
-    summary_rows.sort(key=lambda row: str(row["run_label"]))
+    summary_rows.sort(key=lambda row: _sort_rank(str(row["run_label"])))
     _write_summary_csv(out_dir / "cue_sensitivity_summary.csv", summary_rows)
     _write_latex_table(out_dir / "table_appendix_cue_sensitivity_replay.tex", summary_rows, cue_name)
     write_json(
