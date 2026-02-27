@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import platform
 import random
 import re
+import sys
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +16,7 @@ import torch
 from tqdm import tqdm
 
 from .activation_logger import ActivationLogger
+from .behavior_classifier import LabelOnlyBehaviorClassifier, summarize_classifier_labels
 from .behavior_evaluator import COMPLIANCE_CUES, REFUSAL_CUES, evaluate_behavior
 from .causal_intervention import CausalInterventionEngine
 from .config import ExperimentConfig, load_config
@@ -146,6 +149,117 @@ def _sample_rows_by_tier(
     return sampled[:sample_count]
 
 
+def _build_behavior_candidates(
+    prompt_lookup: dict[str, dict[str, Any]],
+    baseline_eval_rows: list[dict[str, Any]],
+    intervention_eval_rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    candidates_by_variant: dict[str, list[dict[str, Any]]] = {
+        "baseline": [],
+        "authority": [],
+        "intervention": [],
+    }
+
+    for row in baseline_eval_rows:
+        src = prompt_lookup.get(str(row.get("prompt_id", "")))
+        if src is None:
+            continue
+        variant = "authority" if row.get("framing_type") == "authority" else "baseline"
+        candidates_by_variant[variant].append(
+            {**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]}
+        )
+
+    for row in intervention_eval_rows:
+        src = prompt_lookup.get(str(row.get("prompt_id", "")))
+        if src is None:
+            continue
+        candidates_by_variant["intervention"].append(
+            {**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]}
+        )
+
+    return candidates_by_variant
+
+
+def _run_classifier_behavior_endpoint(
+    cfg: ExperimentConfig,
+    model: ModelInterface,
+    intervention_fn: Any,
+    candidates_by_variant: dict[str, list[dict[str, Any]]],
+    out_log_dir: str | Path,
+    git_hash: str,
+    config_ref: str,
+    config_hash: str,
+    seed_offset: int = 0,
+) -> dict[str, Any] | None:
+    if cfg.classifier_behavior_samples_per_variant <= 0:
+        return None
+
+    classifier = LabelOnlyBehaviorClassifier(
+        model_name=cfg.classifier_behavior_model,
+        device=cfg.classifier_behavior_device,
+    )
+    rng = random.Random(cfg.seed + seed_offset)
+    rows: list[dict[str, Any]] = []
+
+    for variant, candidates in candidates_by_variant.items():
+        sampled = _sample_rows_by_tier(
+            rows=candidates,
+            sample_count=cfg.classifier_behavior_samples_per_variant,
+            rng=rng,
+            unsafe_min=cfg.classifier_behavior_unsafe_min_per_variant,
+        )
+        for sampled_row in sampled:
+            generation_prompt = str(sampled_row["prompt"])
+            generated_text = model.generate_short_completion(
+                prompt_text=generation_prompt,
+                max_tokens=cfg.max_tokens,
+                max_new_tokens=cfg.classifier_behavior_max_new_tokens,
+                use_probe_instruction=cfg.classifier_behavior_use_probe_instruction,
+                intervention_layer=cfg.layer_for_sae if variant == "intervention" else None,
+                intervention_fn=intervention_fn if variant == "intervention" else None,
+                temperature=cfg.classifier_behavior_temperature,
+                top_p=cfg.classifier_behavior_top_p,
+            )
+            label_out = classifier.classify(generated_text)
+            predicted_label = "refusal" if bool(sampled_row.get("is_refusal", False)) else "compliance"
+            rows.append(
+                {
+                    "prompt_id": sampled_row["prompt_id"],
+                    "variant": variant,
+                    "framing_type": sampled_row.get("framing_type", "unknown"),
+                    "semantic_request_id": sampled_row.get("semantic_request_id", "unknown"),
+                    "risk_tier": sampled_row.get("risk_tier", "unknown"),
+                    "domain": sampled_row.get("domain", "unknown"),
+                    "predicted_behavior": predicted_label,
+                    "predicted_is_refusal": bool(sampled_row.get("is_refusal", False)),
+                    "logit_diff": float(sampled_row.get("logit_diff", 0.0)),
+                    "refusal_score": float(sampled_row.get("refusal_score", 0.0)),
+                    "compliance_score": float(sampled_row.get("compliance_score", 0.0)),
+                    "classifier_label": label_out.label,
+                    "classifier_refusal_score": float(label_out.refusal_score),
+                    "classifier_compliance_score": float(label_out.compliance_score),
+                    "classifier_matches_logit_prediction": (
+                        label_out.label == predicted_label
+                        if label_out.label in {"refusal", "compliance"}
+                        else None
+                    ),
+                    "generated_text_char_count": int(len(generated_text)),
+                    "max_new_tokens": cfg.classifier_behavior_max_new_tokens,
+                    "seed": cfg.seed,
+                    "git_hash": git_hash,
+                    "config_path": config_ref,
+                    "config_hash": config_hash,
+                    "classifier_model": cfg.classifier_behavior_model,
+                }
+            )
+
+    out_dir = Path(out_log_dir)
+    write_jsonl(out_dir / "classifier_behavior_labels.jsonl", rows)
+    summary = summarize_classifier_labels(rows)
+    write_json(out_dir / "classifier_behavior_summary.json", summary)
+    return summary
+
+
 def _guess_generated_behavior(generated_text: str, risk_tier: str) -> str:
     text = generated_text.strip()
     if not text:
@@ -248,24 +362,92 @@ def _normalize_direction(vec: torch.Tensor) -> torch.Tensor:
     return v / norm
 
 
+def _runtime_environment(model: ModelInterface) -> dict[str, Any]:
+    cuda_available = bool(torch.cuda.is_available())
+    gpu_devices: list[dict[str, Any]] = []
+    if cuda_available:
+        for idx in range(torch.cuda.device_count()):
+            try:
+                name = torch.cuda.get_device_name(idx)
+            except Exception:
+                name = ""
+            try:
+                cap = torch.cuda.get_device_capability(idx)
+                capability = f"{cap[0]}.{cap[1]}"
+            except Exception:
+                capability = ""
+            gpu_devices.append(
+                {
+                    "index": int(idx),
+                    "name": str(name),
+                    "capability": capability,
+                }
+            )
+
+    try:
+        import transformers
+
+        transformers_version = str(transformers.__version__)
+    except Exception:
+        transformers_version = ""
+
+    cudnn_version = torch.backends.cudnn.version()
+    return {
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "torch_version": str(torch.__version__),
+        "transformers_version": transformers_version,
+        "cuda_available": cuda_available,
+        "cuda_version": str(torch.version.cuda) if torch.version.cuda is not None else "",
+        "cudnn_version": int(cudnn_version) if cudnn_version is not None else None,
+        "device": str(model.device),
+        "device_type": str(model.device.type),
+        "gpu_device_count": int(torch.cuda.device_count()) if cuda_available else 0,
+        "gpu_devices": gpu_devices,
+    }
+
+
 def _build_placebo_direction(
     mode: str,
     feature_payload: dict[str, Any],
     sae_model: Any,
     seed: int,
     low_feature_count: int,
+    sae_input: torch.Tensor | None = None,
+    sae_metadata: list[dict[str, Any]] | None = None,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
+    base = feature_payload["residual_direction_normalized"].detach().to(dtype=torch.float32, device="cpu")
+    base_norm = float(torch.linalg.norm(base).item())
+
     if mode == "random":
         generator = torch.Generator(device="cpu")
         generator.manual_seed(seed)
-        base = feature_payload["residual_direction_normalized"]
         random_vec = torch.randn(base.shape, generator=generator, dtype=torch.float32)
         direction = _normalize_direction(random_vec)
         return direction, {
             "placebo_mode": "random",
             "seed": seed,
-            "target_norm": float(torch.linalg.norm(base.detach().to(torch.float32)).item()),
+            "target_norm": base_norm,
             "actual_norm": float(torch.linalg.norm(direction).item()),
+            "dot_with_base": float(torch.dot(direction, base).item()),
+        }
+
+    if mode == "orthogonal":
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(seed)
+        random_vec = torch.randn(base.shape, generator=generator, dtype=torch.float32)
+        denom = float(torch.dot(base, base).item()) + 1e-12
+        projected = (float(torch.dot(random_vec, base).item()) / denom) * base
+        orth_vec = random_vec - projected
+        direction = _normalize_direction(orth_vec)
+        if float(torch.linalg.norm(direction).item()) <= 1e-12:
+            direction = _normalize_direction(random_vec)
+        return direction, {
+            "placebo_mode": "orthogonal",
+            "seed": seed,
+            "target_norm": base_norm,
+            "actual_norm": float(torch.linalg.norm(direction).item()),
+            "dot_with_base": float(torch.dot(direction, base).item()),
         }
 
     if mode == "low_importance":
@@ -302,6 +484,66 @@ def _build_placebo_direction(
             "direction_is_degenerate": bool(direction_l2 <= 1e-12),
         }
 
+    if mode == "shuffled_latent":
+        if sae_input is None or sae_metadata is None:
+            raise ValueError("shuffled_latent placebo requires sae_input and sae_metadata")
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(seed)
+
+        sae_device = next(sae_model.parameters()).device
+        with torch.inference_mode():
+            latent_matrix = (
+                sae_model.encode(sae_input.to(device=sae_device, dtype=torch.float32))
+                .detach()
+                .to(dtype=torch.float32, device="cpu")
+            )
+        if latent_matrix.ndim != 2 or latent_matrix.shape[0] != len(sae_metadata):
+            raise ValueError("Unexpected latent matrix shape for shuffled_latent placebo")
+
+        authority_mask = torch.tensor(
+            [str(m.get("framing_type", "")).lower() == "authority" for m in sae_metadata],
+            dtype=torch.bool,
+        )
+        if not bool(authority_mask.any().item()) or not bool((~authority_mask).any().item()):
+            raise ValueError("shuffled_latent placebo requires both authority and control samples")
+
+        perm = torch.randperm(int(authority_mask.numel()), generator=generator)
+        shuffled_mask = authority_mask[perm]
+        auth_idx = torch.where(shuffled_mask)[0]
+        ctrl_idx = torch.where(~shuffled_mask)[0]
+        shuffled_authority_mean = latent_matrix[auth_idx].mean(dim=0)
+        shuffled_control_mean = latent_matrix[ctrl_idx].mean(dim=0)
+        shuffled_latent_direction = shuffled_authority_mean - shuffled_control_mean
+        decoder_weight = sae_model.decoder.weight.detach().to(dtype=torch.float32, device="cpu")
+        residual = torch.matmul(shuffled_latent_direction, decoder_weight.T)
+        direction = _normalize_direction(residual)
+        residual_l2 = float(torch.linalg.norm(residual).item()) if bool(torch.isfinite(residual).all().item()) else 0.0
+        direction_is_finite = bool(torch.isfinite(direction).all().item())
+        direction_l2 = float(torch.linalg.norm(direction).item()) if direction_is_finite else 0.0
+        true_latent_direction = feature_payload["latent_direction"].detach().to(dtype=torch.float32, device="cpu")
+        latent_cosine = 0.0
+        latent_denom = float(
+            torch.linalg.norm(shuffled_latent_direction).item() * torch.linalg.norm(true_latent_direction).item()
+        )
+        if latent_denom > 1e-12:
+            latent_cosine = float(torch.dot(shuffled_latent_direction, true_latent_direction).item() / latent_denom)
+        return direction, {
+            "placebo_mode": "shuffled_latent",
+            "seed": seed,
+            "target_norm": base_norm,
+            "actual_norm": direction_l2,
+            "dot_with_base": float(torch.dot(direction, base).item()),
+            "authority_count": int(authority_mask.sum().item()),
+            "control_count": int((~authority_mask).sum().item()),
+            "shuffled_authority_count": int(auth_idx.numel()),
+            "shuffled_control_count": int(ctrl_idx.numel()),
+            "residual_l2_before_normalize": residual_l2,
+            "residual_is_finite": bool(torch.isfinite(residual).all().item()),
+            "direction_is_finite": direction_is_finite,
+            "direction_is_degenerate": bool(direction_l2 <= 1e-12),
+            "latent_cosine_with_true_direction": latent_cosine,
+        }
+
     raise ValueError(f"Unsupported placebo mode: {mode}")
 
 
@@ -332,9 +574,11 @@ def _run_placebo_experiment(
     feature_payload: dict[str, Any],
     activation_root: str | Path,
     prompt_log_rows: list[dict[str, Any]],
+    prompt_lookup: dict[str, dict[str, Any]],
     git_hash: str,
     config_ref: str,
     config_hash: str,
+    runtime_environment: dict[str, Any],
 ) -> dict[str, Any]:
     placebo_root = ensure_dir(Path(cfg.results_dir) / f"{cfg.experiment_name}_placebo" / mode)
     placebo_log_dir = ensure_dir(Path(placebo_root) / "logs")
@@ -378,6 +622,25 @@ def _run_placebo_experiment(
         )
     write_jsonl(Path(placebo_log_dir) / "prompts.jsonl", placebo_prompt_rows)
 
+    classifier_summary = _run_classifier_behavior_endpoint(
+        cfg=cfg,
+        model=model,
+        intervention_fn=intervention_engine.make_projection_removal_fn(
+            direction,
+            alpha=cfg.alpha_intervention,
+        ),
+        candidates_by_variant=_build_behavior_candidates(
+            prompt_lookup=prompt_lookup,
+            baseline_eval_rows=baseline_eval_rows,
+            intervention_eval_rows=intervention_eval_rows,
+        ),
+        out_log_dir=placebo_log_dir,
+        git_hash=git_hash,
+        config_ref=config_ref,
+        config_hash=config_hash,
+        seed_offset=7000 + seed_offset,
+    )
+
     torch.save(
         {
             "residual_direction_normalized": direction,
@@ -409,6 +672,8 @@ def _run_placebo_experiment(
     )
 
     metrics = _enrich_metrics_with_posthoc(report["metrics"], posthoc_report)
+    if classifier_summary is not None:
+        metrics["classifier_behavior_endpoint"] = classifier_summary
     write_json(Path(placebo_root) / "metrics.json", metrics)
 
     write_json(
@@ -420,10 +685,13 @@ def _run_placebo_experiment(
             "config": cfg.to_dict(),
             "placebo_mode": mode,
             "placebo_direction": direction_meta,
+            "runtime_environment": runtime_environment,
             "artifacts": {
                 "results_root": str(placebo_root),
                 "posthoc_dir": str(Path(placebo_root) / "posthoc"),
                 "direction_vector": str(Path(placebo_root) / "placebo_direction_vector.pt"),
+                "classifier_behavior_labels": str(Path(placebo_log_dir) / "classifier_behavior_labels.jsonl"),
+                "classifier_behavior_summary": str(Path(placebo_log_dir) / "classifier_behavior_summary.json"),
             },
         },
     )
@@ -458,6 +726,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         prompts = generate_prompts(semantic_rows, cfg.framing_types)
         save_prompt_dataset(cfg.prompt_dataset(), prompts)
     prompt_rows = read_jsonl(cfg.prompt_dataset())
+    prompt_lookup = {str(row["prompt_id"]): row for row in prompt_rows}
 
     _check_prompt_security(prompt_rows, cfg)
 
@@ -468,6 +737,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         probe_instruction=cfg.probe_instruction,
         refusal_margin=cfg.refusal_margin,
     )
+    runtime_environment = _runtime_environment(model)
     logger = ActivationLogger(activation_root)
     capture_layers = None if cfg.capture_all_layers else set(cfg.capture_layers or [cfg.layer_for_sae])
     prompt_log_rows: list[dict[str, Any]] = []
@@ -597,31 +867,12 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
     write_jsonl(Path(log_dir) / "prompts.jsonl", prompt_log_rows)
 
     behavioral_gt_rows: list[dict[str, Any]] | None = None
+    behavior_candidates = _build_behavior_candidates(
+        prompt_lookup=prompt_lookup,
+        baseline_eval_rows=baseline_eval_rows,
+        intervention_eval_rows=intervention_eval_rows,
+    )
     if cfg.behavioral_ground_truth_samples_per_variant > 0:
-        prompt_lookup = {row["prompt_id"]: row for row in prompt_rows}
-        candidates_by_variant: dict[str, list[dict[str, Any]]] = {
-            "baseline": [],
-            "authority": [],
-            "intervention": [],
-        }
-
-        for row in baseline_eval_rows:
-            src = prompt_lookup.get(row["prompt_id"])
-            if src is None:
-                continue
-            variant = "authority" if row.get("framing_type") == "authority" else "baseline"
-            candidates_by_variant[variant].append(
-                {**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]}
-            )
-
-        for row in intervention_eval_rows:
-            src = prompt_lookup.get(row["prompt_id"])
-            if src is None:
-                continue
-            candidates_by_variant["intervention"].append(
-                {**row, "domain": src.get("domain", "unknown"), "prompt": src["full_prompt"]}
-            )
-
         rng = random.Random(cfg.seed)
         intervention_fn = intervention_engine.make_projection_removal_fn(
             feature_payload["residual_direction_normalized"],
@@ -629,7 +880,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         )
         diagnostic_rows: list[dict[str, Any]] = []
 
-        for variant, candidates in candidates_by_variant.items():
+        for variant, candidates in behavior_candidates.items():
             sampled = _sample_rows_by_tier(
                 rows=candidates,
                 sample_count=cfg.behavioral_ground_truth_samples_per_variant,
@@ -694,6 +945,21 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
             _summarize_behavioral_ground_truth(diagnostic_rows),
         )
 
+    classifier_behavior_summary = _run_classifier_behavior_endpoint(
+        cfg=cfg,
+        model=model,
+        intervention_fn=intervention_engine.make_projection_removal_fn(
+            feature_payload["residual_direction_normalized"],
+            alpha=cfg.alpha_intervention,
+        ),
+        candidates_by_variant=behavior_candidates,
+        out_log_dir=log_dir,
+        git_hash=git_hash,
+        config_ref=config_ref,
+        config_hash=config_hash,
+        seed_offset=6000,
+    )
+
     report = generate_report(
         result_dir=result_root,
         baseline_summary=baseline_summary,
@@ -713,6 +979,8 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         seed=cfg.seed,
     )
     report["metrics"] = _enrich_metrics_with_posthoc(report["metrics"], posthoc_report)
+    if classifier_behavior_summary is not None:
+        report["metrics"]["classifier_behavior_endpoint"] = classifier_behavior_summary
     write_json(Path(result_root) / "metrics.json", report["metrics"])
 
     direct_metrics = baseline_summary.get("framing_metrics", {}).get("direct", {})
@@ -730,6 +998,8 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
             "direction_vector": str(direction_path),
             "feature_summary": str(feature_summary_path),
             "posthoc_dir": str(Path(result_root) / "posthoc"),
+            "classifier_behavior_labels": str(Path(log_dir) / "classifier_behavior_labels.jsonl"),
+            "classifier_behavior_summary": str(Path(log_dir) / "classifier_behavior_summary.json"),
         },
         "checks": {
             "authority_refusal_score_reduction": float(authority_metrics.get("mean_logit_diff", 0.0))
@@ -739,6 +1009,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
             "plots_generated": True,
             "reproducible_config_run": True,
         },
+        "runtime_environment": runtime_environment,
     }
     write_json(Path(log_dir) / "run_manifest.json", run_manifest)
 
@@ -750,13 +1021,15 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 mode=mode,
                 feature_payload=feature_payload,
                 sae_model=sae_model,
-                seed=cfg.seed + 1000 + idx,
+                seed=cfg.seed + cfg.placebo_shuffle_seed_offset + idx,
                 low_feature_count=cfg.placebo_low_importance_features,
+                sae_input=sae_input,
+                sae_metadata=sae_metadata,
             )
             placebo_out = _run_placebo_experiment(
                 cfg=cfg,
                 mode=mode,
-                seed_offset=1000 + idx,
+                seed_offset=cfg.placebo_shuffle_seed_offset + idx,
                 direction=direction,
                 direction_meta=direction_meta,
                 model=model,
@@ -767,9 +1040,11 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
                 feature_payload=feature_payload,
                 activation_root=activation_root,
                 prompt_log_rows=prompt_log_rows,
+                prompt_lookup=prompt_lookup,
                 git_hash=git_hash,
                 config_ref=config_ref,
                 config_hash=config_hash,
+                runtime_environment=runtime_environment,
             )
             placebo_results.append(placebo_out)
         write_json(

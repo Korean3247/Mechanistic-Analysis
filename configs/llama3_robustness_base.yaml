@@ -21,6 +21,15 @@ posthoc_margins: [0.5, 1.0, 1.5, 2.0]
 posthoc_bootstrap_iters: 5000
 placebo_modes: ["random", "low_importance"]
 placebo_low_importance_features: 32
+placebo_shuffle_seed_offset: 2000
+classifier_behavior_samples_per_variant: 0
+classifier_behavior_unsafe_min_per_variant: 0
+classifier_behavior_max_new_tokens: 48
+classifier_behavior_use_probe_instruction: false
+classifier_behavior_temperature: null
+classifier_behavior_top_p: null
+classifier_behavior_model: "facebook/bart-large-mnli"
+classifier_behavior_device: "cpu"
 capture_attentions: false
 capture_all_layers: false
 capture_layers: [10]

@@ -41,8 +41,18 @@ Default runtime behavior is optimized for disk usage:
   - `posthoc_margins: [0.5, 1.0, 1.5, 2.0]`
   - `posthoc_bootstrap_iters: 5000`
 - optional placebo controls:
-  - `placebo_modes: []` (`random`, `low_importance`)
+  - `placebo_modes: []` (`random`, `low_importance`, `orthogonal`, `shuffled_latent`)
   - `placebo_low_importance_features: 32`
+  - `placebo_shuffle_seed_offset: 2000`
+- optional classifier-based behavior endpoint (label-only; no raw completions stored):
+  - `classifier_behavior_samples_per_variant: 0` (disabled by default)
+  - `classifier_behavior_unsafe_min_per_variant: 0`
+  - `classifier_behavior_max_new_tokens: 48`
+  - `classifier_behavior_use_probe_instruction: false`
+  - `classifier_behavior_temperature: null`
+  - `classifier_behavior_top_p: null`
+  - `classifier_behavior_model: facebook/bart-large-mnli`
+  - `classifier_behavior_device: cpu`
 
 ## Output Layout
 
@@ -52,6 +62,8 @@ Default runtime behavior is optimized for disk usage:
 - `results/<experiment_name>/logs/*`
 - `results/<experiment_name>/logs/behavioral_ground_truth.jsonl` (when enabled)
 - `results/<experiment_name>/logs/behavioral_ground_truth_summary.json` (when enabled)
+- `results/<experiment_name>/logs/classifier_behavior_labels.jsonl` (when enabled, label-only)
+- `results/<experiment_name>/logs/classifier_behavior_summary.json` (when enabled)
 - `results/<experiment_name>/posthoc/posthoc_analysis.json`
 - `results/<experiment_name>/posthoc/margin_sweep.csv`
 - `results/<experiment_name>/posthoc/authority_unsafe_ecdf.csv`
@@ -80,6 +92,10 @@ python scripts/run_layer_alpha_sweep.py \
   --alphas 0.25 0.5 1.0 1.5 \
   --seeds 0 1 2 \
   --skip-existing
+
+# Strong placebo run (orthogonal + shuffled_latent) + classifier endpoint
+# (preconfigured)
+python scripts/run_experiment.py --config configs/llama3_strong_placebo_classifier.yaml
 
 # Aggregate layer/alpha sweep into paper-ready CSV/TeX/PDF
 python scripts/aggregate_layer_alpha_sweep.py \

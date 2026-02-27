@@ -36,6 +36,15 @@ class ExperimentConfig:
     posthoc_bootstrap_iters: int = 5000
     placebo_modes: list[str] = field(default_factory=list)
     placebo_low_importance_features: int = 32
+    placebo_shuffle_seed_offset: int = 2000
+    classifier_behavior_samples_per_variant: int = 0
+    classifier_behavior_unsafe_min_per_variant: int = 0
+    classifier_behavior_max_new_tokens: int = 48
+    classifier_behavior_use_probe_instruction: bool = False
+    classifier_behavior_temperature: float | None = None
+    classifier_behavior_top_p: float | None = None
+    classifier_behavior_model: str = "facebook/bart-large-mnli"
+    classifier_behavior_device: str = "cpu"
     capture_attentions: bool = False
     capture_all_layers: bool = False
     capture_layers: list[int] | None = None
@@ -88,11 +97,38 @@ class ExperimentConfig:
             raise ValueError("posthoc_margins must contain non-negative values")
         if self.posthoc_bootstrap_iters < 1:
             raise ValueError("posthoc_bootstrap_iters must be >= 1")
-        valid_placebo_modes = {"random", "low_importance"}
+        valid_placebo_modes = {"random", "low_importance", "orthogonal", "shuffled_latent"}
         if any(mode not in valid_placebo_modes for mode in self.placebo_modes):
             raise ValueError(f"placebo_modes must be subset of {sorted(valid_placebo_modes)}")
         if self.placebo_low_importance_features < 1:
             raise ValueError("placebo_low_importance_features must be >= 1")
+        if self.placebo_shuffle_seed_offset < 0:
+            raise ValueError("placebo_shuffle_seed_offset must be >= 0")
+        if self.classifier_behavior_samples_per_variant < 0:
+            raise ValueError("classifier_behavior_samples_per_variant must be >= 0")
+        if self.classifier_behavior_unsafe_min_per_variant < 0:
+            raise ValueError("classifier_behavior_unsafe_min_per_variant must be >= 0")
+        if (
+            self.classifier_behavior_samples_per_variant > 0
+            and self.classifier_behavior_unsafe_min_per_variant > self.classifier_behavior_samples_per_variant
+        ):
+            raise ValueError(
+                "classifier_behavior_unsafe_min_per_variant cannot exceed "
+                "classifier_behavior_samples_per_variant"
+            )
+        if self.classifier_behavior_max_new_tokens < 1:
+            raise ValueError("classifier_behavior_max_new_tokens must be >= 1")
+        if (
+            self.classifier_behavior_temperature is not None
+            and self.classifier_behavior_temperature <= 0
+        ):
+            raise ValueError("classifier_behavior_temperature must be > 0 when set")
+        if self.classifier_behavior_top_p is not None and not (0 < self.classifier_behavior_top_p <= 1):
+            raise ValueError("classifier_behavior_top_p must be in (0, 1] when set")
+        if not isinstance(self.classifier_behavior_model, str) or not self.classifier_behavior_model.strip():
+            raise ValueError("classifier_behavior_model must be a non-empty string")
+        if not isinstance(self.classifier_behavior_device, str) or not self.classifier_behavior_device.strip():
+            raise ValueError("classifier_behavior_device must be a non-empty string")
         if self.sae_hidden_multiplier < 1:
             raise ValueError("sae_hidden_multiplier must be >= 1")
         if self.alpha_intervention < 0:
