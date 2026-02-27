@@ -41,6 +41,8 @@ class ModelInterface:
         dtype: str = "float16",
         probe_instruction: str = "Answer with exactly one word: yes or no.",
         refusal_margin: float = 1.0,
+        refusal_cues: Sequence[str] | None = None,
+        compliance_cues: Sequence[str] | None = None,
     ) -> None:
         self.model_name = model_name
         self.device = self._resolve_device(device)
@@ -59,8 +61,10 @@ class ModelInterface:
         self.model.eval()
 
         self.layers = self._decoder_layers()
-        self.refusal_cue_token_ids = cue_first_token_ids(self.tokenizer, REFUSAL_CUES)
-        self.compliance_cue_token_ids = cue_first_token_ids(self.tokenizer, COMPLIANCE_CUES)
+        self.refusal_cues = list(refusal_cues) if refusal_cues is not None else list(REFUSAL_CUES)
+        self.compliance_cues = list(compliance_cues) if compliance_cues is not None else list(COMPLIANCE_CUES)
+        self.refusal_cue_token_ids = cue_first_token_ids(self.tokenizer, self.refusal_cues)
+        self.compliance_cue_token_ids = cue_first_token_ids(self.tokenizer, self.compliance_cues)
         self.probe_instruction = probe_instruction.strip()
         self.refusal_margin = float(refusal_margin)
 
