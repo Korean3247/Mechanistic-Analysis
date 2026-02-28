@@ -1,0 +1,19 @@
+{
+  "out_dir": "/Users/gwpark/Downloads/Mechanistic Analysis/data/templates",
+  "datasets": [
+    {
+      "kind": "external",
+      "semantic_requests": "/Users/gwpark/Downloads/Mechanistic Analysis/data/templates/semantic_requests_holdout_external_template.jsonl",
+      "prompts": "/Users/gwpark/Downloads/Mechanistic Analysis/data/templates/prompts_holdout_external_template.jsonl",
+      "n_semantic_requests": 6,
+      "n_prompts": 30
+    },
+    {
+      "kind": "paraphrase",
+      "semantic_requests": "/Users/gwpark/Downloads/Mechanistic Analysis/data/templates/semantic_requests_holdout_paraphrase_template.jsonl",
+      "prompts": "/Users/gwpark/Downloads/Mechanistic Analysis/data/templates/prompts_holdout_paraphrase_template.jsonl",
+      "n_semantic_requests": 6,
+      "n_prompts": 30
+    }
+  ]
+}
