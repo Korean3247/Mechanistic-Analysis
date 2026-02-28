@@ -15,7 +15,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from scipy.stats import ks_2samp
 
 
 @dataclass
@@ -24,6 +23,12 @@ class GroupComparison:
     label: str
     a_filter: Callable[[dict[str, Any]], bool]
     b_filter: Callable[[dict[str, Any]], bool]
+
+
+@dataclass
+class KSTestResult:
+    statistic: float
+    pvalue: float
 
 
 def _safe_float(v: Any) -> float:
@@ -58,6 +63,36 @@ def _cliffs_delta(a: np.ndarray, b: np.ndarray) -> float:
         lt += int(np.sum(av < b))
     total = len(a) * len(b)
     return float((gt - lt) / total) if total else 0.0
+
+
+def _ks_2samp(a: np.ndarray, b: np.ndarray) -> KSTestResult:
+    if len(a) == 0 or len(b) == 0:
+        return KSTestResult(statistic=0.0, pvalue=1.0)
+
+    a = np.sort(np.asarray(a, dtype=np.float64))
+    b = np.sort(np.asarray(b, dtype=np.float64))
+    values = np.sort(np.concatenate([a, b]))
+
+    cdf_a = np.searchsorted(a, values, side="right") / len(a)
+    cdf_b = np.searchsorted(b, values, side="right") / len(b)
+    d = float(np.max(np.abs(cdf_a - cdf_b)))
+
+    # Smirnov asymptotic approximation, adequate here for ranking/effect reporting.
+    n1 = len(a)
+    n2 = len(b)
+    en = math.sqrt(n1 * n2 / (n1 + n2))
+    if en <= 0 or d <= 0:
+        return KSTestResult(statistic=d, pvalue=1.0)
+
+    lam = (en + 0.12 + 0.11 / en) * d
+    series = 0.0
+    for k in range(1, 101):
+        term = (-1) ** (k - 1) * math.exp(-2.0 * (lam**2) * (k**2))
+        series += term
+        if abs(term) < 1e-12:
+            break
+    pvalue = max(0.0, min(1.0, 2.0 * series))
+    return KSTestResult(statistic=d, pvalue=pvalue)
 
 
 def _bootstrap_ci_mean_diff_and_d(
@@ -232,7 +267,7 @@ def _group_stats(rows: list[dict[str, Any]], cmp: GroupComparison) -> dict[str, 
             "cohens_d_ci95_low": 0.0,
             "cohens_d_ci95_high": 0.0,
         }
-    ks = ks_2samp(a_vals, b_vals, alternative="two-sided", mode="auto")
+    ks = _ks_2samp(a_vals, b_vals)
     ci = _bootstrap_ci_mean_diff_and_d(a_vals, b_vals, iters=10000, seed=42)
     return {
         "comparison_key": cmp.key,
