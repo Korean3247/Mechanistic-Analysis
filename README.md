@@ -118,12 +118,12 @@ Sweep aggregate outputs:
 For cloud runs, install the extra benchmark dependency and make sure gated model access is configured before launching large-model jobs:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-pip install datasets
+bash scripts/bootstrap_cloud_workspace.sh
+source .env.cloud
 export HF_TOKEN=...
 ```
+
+The bootstrap script creates a repo-local virtualenv, cache directories, `tmp/`, `logs/`, and an `.env.cloud` file so this workspace does not share Hugging Face / Torch / Matplotlib caches with other experiments on the same machine.
 
 Prepared cloud configs live under `configs/cloud/`:
 - `llama3_70b_full_350_m15_gt200_probe_placebo.yaml`
