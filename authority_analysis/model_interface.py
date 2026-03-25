@@ -56,8 +56,8 @@ class ModelInterface:
             model_name,
             torch_dtype=torch_dtype,
             low_cpu_mem_usage=True,
+            device_map="auto",
         )
-        self.model.to(self.device)
         self.model.eval()
 
         self.layers = self._decoder_layers()
