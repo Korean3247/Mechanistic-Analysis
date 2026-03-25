@@ -32,6 +32,7 @@ export TOKENIZERS_PARALLELISM=false
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTHONNOUSERSITE=1
 export WANDB_DISABLED=true
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
 EOF
 
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then

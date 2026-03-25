@@ -126,6 +126,7 @@ export HF_TOKEN=...
 
 The bootstrap script creates a repo-local virtualenv, cache directories, `tmp/`, `logs/`, and an `.env.cloud` file so this workspace does not share Hugging Face / Torch / Matplotlib caches with other experiments on the same machine.
 It also installs `datasets` and `accelerate`. On CUDA machines, pass a matching PyTorch wheel index through `TORCH_INDEX_URL`; for an NVIDIA L4 with driver/CUDA 12.4, use `https://download.pytorch.org/whl/cu124`.
+The generated `.env.cloud` also sets `CUBLAS_WORKSPACE_CONFIG=:4096:8`, which is required because this repo enables deterministic PyTorch algorithms globally.
 
 Prepared cloud configs live under `configs/cloud/`:
 - `llama3_70b_full_350_m15_gt200_probe_placebo.yaml`
