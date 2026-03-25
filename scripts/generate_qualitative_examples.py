@@ -81,7 +81,7 @@ def main():
     )
 
     # 6. Build intervention function
-    engine = CausalInterventionEngine()
+    engine = CausalInterventionEngine(model)
     intervention_fn = engine.make_projection_removal_fn(direction.to(model.device), alpha=ALPHA)
 
     # 7. Generate
