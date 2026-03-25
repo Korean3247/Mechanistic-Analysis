@@ -20,20 +20,10 @@ from authority_analysis.model_interface import ModelInterface
 from authority_analysis.causal_intervention import CausalInterventionEngine
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-DIRECTION_PT = (
-    ROOT
-    / "From_Lambda/mechanistic-analysis/results 2"
-    / "llama3_full_350_m15_gt200_probe"
-    / "authority_direction_vector.pt"
-)
-BASELINE_SAMPLES = (
-    ROOT
-    / "From_Lambda/mechanistic-analysis/results 2"
-    / "llama3_full_350_m15_gt200_probe/logs"
-    / "baseline_samples.json"
-)
-PROMPTS_JSONL = ROOT / "data/prompts.jsonl"
-OUT_FILE = ROOT / "results/qualitative_examples.jsonl"
+DIRECTION_PT     = ROOT / "results/main/authority_direction_vector.pt"
+BASELINE_SAMPLES = ROOT / "results/main/logs/baseline_samples.json"
+PROMPTS_JSONL    = ROOT / "data/prompts.jsonl"
+OUT_FILE         = ROOT / "results/qualitative_examples.jsonl"
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 MODEL_NAME      = "meta-llama/Meta-Llama-3-8B-Instruct"
