@@ -5,6 +5,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3.12}"
 VENV_DIR="${VENV_DIR:-$REPO_ROOT/.venv}"
 PIP_CACHE_DIR="${PIP_CACHE_DIR:-$REPO_ROOT/.cache/pip}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-}"
+TORCH_PACKAGES="${TORCH_PACKAGES:-torch torchvision torchaudio}"
 
 mkdir -p \
   "$REPO_ROOT/.cache/huggingface" \
@@ -40,8 +42,13 @@ fi
 source "$VENV_DIR/bin/activate"
 
 python -m pip install --upgrade pip wheel
+if [[ -n "$TORCH_INDEX_URL" ]]; then
+  # Install a CUDA wheel set compatible with the target machine, e.g.
+  # TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+  python -m pip install --upgrade --index-url "$TORCH_INDEX_URL" $TORCH_PACKAGES
+fi
 python -m pip install -e .
-python -m pip install datasets
+python -m pip install datasets accelerate
 
 cat <<EOF
 Workspace bootstrap complete.
