@@ -118,13 +118,18 @@ class ModelInterface:
         capture_layers: set[int] | None,
         intervention_layer: int | None,
         intervention_fn: InterventionFn | None,
+        intervention_fns_by_layer: dict[int, InterventionFn] | None = None,
     ) -> list[Any]:
         hook_handles: list[Any] = []
         capture_all = capture_layers is None
         capture_layer_set = set(capture_layers or [])
         hook_layer_set = set(range(len(self.layers))) if capture_all else set(capture_layer_set)
-        if intervention_layer is not None:
-            hook_layer_set.add(intervention_layer)
+        intervention_map: dict[int, InterventionFn] = {}
+        if intervention_layer is not None and intervention_fn is not None:
+            intervention_map[int(intervention_layer)] = intervention_fn
+        if intervention_fns_by_layer:
+            intervention_map.update({int(k): v for k, v in intervention_fns_by_layer.items()})
+        hook_layer_set.update(intervention_map.keys())
 
         for layer_idx, layer in enumerate(self.layers):
             if layer_idx not in hook_layer_set:
@@ -138,8 +143,9 @@ class ModelInterface:
                     hidden = inputs[0]
                     if should_capture and residual_stream is not None:
                         residual_stream[f"blocks.{idx}.hook_resid_pre"] = self._to_fp16_cpu(hidden)
-                    if intervention_layer is not None and intervention_fn is not None and idx == intervention_layer:
-                        updated = intervention_fn(hidden)
+                    layer_intervention = intervention_map.get(idx)
+                    if layer_intervention is not None:
+                        updated = layer_intervention(hidden)
                         if len(inputs) == 1:
                             return (updated,)
                         return (updated, *inputs[1:])
@@ -177,6 +183,7 @@ class ModelInterface:
         max_tokens: int = 128,
         intervention_layer: int | None = None,
         intervention_fn: InterventionFn | None = None,
+        intervention_fns_by_layer: dict[int, InterventionFn] | None = None,
         capture_layers: set[int] | None = None,
         capture_attentions: bool = False,
     ) -> ModelForwardArtifacts:
@@ -195,6 +202,7 @@ class ModelInterface:
             capture_layers=capture_layers,
             intervention_layer=intervention_layer,
             intervention_fn=intervention_fn,
+            intervention_fns_by_layer=intervention_fns_by_layer,
         )
 
         try:
@@ -247,6 +255,7 @@ class ModelInterface:
         use_probe_instruction: bool = False,
         intervention_layer: int | None = None,
         intervention_fn: InterventionFn | None = None,
+        intervention_fns_by_layer: dict[int, InterventionFn] | None = None,
         temperature: float | None = None,
         top_p: float | None = None,
     ) -> str:
@@ -264,6 +273,7 @@ class ModelInterface:
             capture_layers=set(),
             intervention_layer=intervention_layer,
             intervention_fn=intervention_fn,
+            intervention_fns_by_layer=intervention_fns_by_layer,
         )
 
         prev_det_state: bool | None = None
@@ -307,3 +317,53 @@ class ModelInterface:
         completion_ids = generated[0, prompt_len:]
         decoded = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
         return self._trim_generated_text(decoded)
+
+    def score_option_letters(
+        self,
+        prompt_text: str,
+        option_labels: Sequence[str],
+        max_tokens: int = 2048,
+        use_probe_instruction: bool = False,
+        intervention_layer: int | None = None,
+        intervention_fn: InterventionFn | None = None,
+        intervention_fns_by_layer: dict[int, InterventionFn] | None = None,
+    ) -> dict[str, float]:
+        source_prompt = self.compose_prompt(prompt_text) if use_probe_instruction else prompt_text.rstrip()
+        encoded = self.tokenizer(
+            source_prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_tokens,
+        )
+        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+
+        hook_handles = self._register_layer_hooks(
+            residual_stream=None,
+            capture_layers=set(),
+            intervention_layer=intervention_layer,
+            intervention_fn=intervention_fn,
+            intervention_fns_by_layer=intervention_fns_by_layer,
+        )
+        try:
+            with torch.inference_mode():
+                outputs = self.model(
+                    **encoded,
+                    output_attentions=False,
+                    use_cache=False,
+                )
+        finally:
+            self._remove_hooks(hook_handles)
+
+        final_token_logits = outputs.logits[:, -1, :].to(dtype=torch.float32)
+        scores: dict[str, float] = {}
+        for label in option_labels:
+            token_ids = self.tokenizer(
+                f" {label}",
+                add_special_tokens=False,
+                return_tensors="pt",
+            )["input_ids"][0]
+            if token_ids.numel() == 0:
+                raise ValueError(f"Unable to tokenize option label: {label!r}")
+            first_token_id = int(token_ids[0].item())
+            scores[str(label)] = float(final_token_logits[0, first_token_id].item())
+        return scores

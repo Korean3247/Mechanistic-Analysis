@@ -113,6 +113,79 @@ Sweep aggregate outputs:
 - `results/<prefix>_layer_alpha_aggregate/table_alpha_robustness.tex`
 - `results/<prefix>_layer_alpha_aggregate/robustness_summary.json`
 
+## Cloud Execution
+
+For cloud runs, install the extra benchmark dependency and make sure gated model access is configured before launching large-model jobs:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+pip install datasets
+export HF_TOKEN=...
+```
+
+Prepared cloud configs live under `configs/cloud/`:
+- `llama3_70b_full_350_m15_gt200_probe_placebo.yaml`
+- `gemma2_9b_full_350_m15_gt200_probe_placebo.yaml`
+- `qwen25_72b_full_350_m15_gt200_probe_placebo.yaml`
+
+Prepared campaign manifest:
+
+```bash
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_neurips_push.yaml \
+  --dry-run
+
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_neurips_push.yaml
+```
+
+The campaign runner writes `<manifest>.summary.json` with per-step status and respects `skip_if_exists` guards.
+
+### Utility Benchmarks
+
+MMLU and TruthfulQA MC1 can be run baseline vs frozen-direction intervention in-repo:
+
+```bash
+python scripts/run_mcq_benchmark.py \
+  --task mmlu \
+  --model meta-llama/Meta-Llama-3-70B-Instruct \
+  --output-dir results/benchmarks/llama3_70b_mmlu \
+  --fewshot 5 \
+  --max-tokens 2048 \
+  --dtype bfloat16 \
+  --direction results/llama3_70b_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt \
+  --layer 40 \
+  --alpha 1.0
+```
+
+Outputs:
+- `summary.json`
+- `baseline_examples.jsonl`
+- `baseline_group_summary.csv`
+- `intervention_examples.jsonl` (when intervention is enabled)
+- `intervention_group_summary.csv` (when intervention is enabled)
+
+### Multi-Layer Frozen Replay
+
+`run_frozen_direction_replay.py` and `authority_analysis.causal_intervention` both accept repeated `--direction-spec` flags:
+
+```bash
+python scripts/run_frozen_direction_replay.py \
+  --prompts data/prompts_holdout_external.jsonl \
+  --output-dir results/holdout_external_llama3_multilayer \
+  --model meta-llama/Meta-Llama-3-8B-Instruct \
+  --direction-spec 8:results/llama3_full350_robust_l8_a1p0_s0/authority_direction_vector.pt:1.0 \
+  --direction-spec 10:results/llama3_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt:1.0 \
+  --direction-spec 12:results/llama3_full350_robust_l12_a1p0_s0/authority_direction_vector.pt:1.0 \
+  --max-tokens 128 \
+  --dtype float16 \
+  --control-framings direct
+```
+
+Use this path only after you have direction vectors for each target layer. The current main pipeline still trains a single-layer SAE/direction per run.
+
 ## Final Comparison Package
 
 ```bash

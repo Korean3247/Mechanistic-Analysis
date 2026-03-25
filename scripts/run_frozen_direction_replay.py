@@ -56,6 +56,18 @@ def _load_direction(path: Path) -> Any:
     return direction
 
 
+def _parse_direction_spec(raw: str, default_alpha: float) -> tuple[int, Path, float]:
+    parts = raw.split(":")
+    if len(parts) not in {2, 3}:
+        raise ValueError(
+            f"Invalid --direction-spec {raw!r}. Expected 'LAYER:PATH' or 'LAYER:PATH:ALPHA'."
+        )
+    layer = int(parts[0])
+    path = Path(parts[1]).expanduser().resolve()
+    alpha = float(parts[2]) if len(parts) == 3 else float(default_alpha)
+    return layer, path, alpha
+
+
 def _clear_pt_files(path: Path) -> None:
     if not path.exists():
         return
@@ -68,9 +80,15 @@ def main() -> None:
     parser.add_argument("--prompts", required=True, help="Prompt dataset JSONL")
     parser.add_argument("--output-dir", required=True, help="Directory for replay artifacts")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--direction", required=True, help="authority_direction_vector.pt")
-    parser.add_argument("--layer", type=int, required=True)
+    parser.add_argument("--direction", default=None, help="authority_direction_vector.pt")
+    parser.add_argument("--layer", type=int, default=None)
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument(
+        "--direction-spec",
+        action="append",
+        default=[],
+        help="Multi-layer intervention spec 'LAYER:PATH' or 'LAYER:PATH:ALPHA'. Can be repeated.",
+    )
     parser.add_argument("--max-tokens", type=int, default=128)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--dtype", default="float16")
@@ -101,9 +119,26 @@ def main() -> None:
     from authority_analysis.utils import ensure_dir, read_jsonl, write_json, write_jsonl
 
     prompts_path = Path(args.prompts).expanduser().resolve()
-    direction_path = Path(args.direction).expanduser().resolve()
     out_dir = ensure_dir(Path(args.output_dir).expanduser().resolve())
-    capture_layers = set(args.capture_layers or [args.layer])
+    if args.direction and args.layer is None:
+        raise ValueError("--direction requires --layer")
+    if args.layer is not None and not args.direction:
+        raise ValueError("--layer requires --direction")
+
+    direction_specs = [_parse_direction_spec(raw, args.alpha) for raw in args.direction_spec]
+    if args.direction and args.layer is not None:
+        direction_specs.insert(
+            0,
+            (
+                int(args.layer),
+                Path(args.direction).expanduser().resolve(),
+                float(args.alpha),
+            ),
+        )
+    if not direction_specs:
+        raise ValueError("Provide --direction/--layer or at least one --direction-spec")
+
+    capture_layers = set(args.capture_layers or [layer for layer, _path, _alpha in direction_specs])
 
     prompt_rows = read_jsonl(prompts_path)
     if not prompt_rows:
@@ -157,17 +192,32 @@ def main() -> None:
     write_json(out_dir / "baseline_samples.json", {"samples": baseline_eval_rows})
     write_json(out_dir / "baseline_eval.json", {"summary": baseline_summary, "samples": baseline_eval_rows})
 
-    direction = _load_direction(direction_path)
     intervention_engine = CausalInterventionEngine(model)
-    intervention_rows = intervention_engine.run(
-        prompts=authority_rows,
-        layer_idx=args.layer,
-        direction=direction,
-        alpha=args.alpha,
-        max_tokens=args.max_tokens,
-        capture_layers=set(),
-        capture_attentions=False,
-    )
+    if len(direction_specs) == 1:
+        layer, direction_path, alpha = direction_specs[0]
+        intervention_rows = intervention_engine.run(
+            prompts=authority_rows,
+            layer_idx=layer,
+            direction=_load_direction(direction_path),
+            alpha=alpha,
+            max_tokens=args.max_tokens,
+            capture_layers=set(),
+            capture_attentions=False,
+        )
+    else:
+        intervention_rows = intervention_engine.run(
+            prompts=authority_rows,
+            layer_idx=None,
+            direction=None,
+            alpha=args.alpha,
+            max_tokens=args.max_tokens,
+            capture_layers=set(),
+            capture_attentions=False,
+            intervention_fns_by_layer={
+                layer: intervention_engine.make_projection_removal_fn(_load_direction(direction_path), alpha=alpha)
+                for layer, direction_path, alpha in direction_specs
+            },
+        )
     intervention_eval_rows, intervention_summary = evaluate_behavior(
         intervention_rows,
         control_framings=list(args.control_framings),
@@ -191,10 +241,18 @@ def main() -> None:
     manifest = {
         "run_label": args.run_label or out_dir.name,
         "prompts_path": str(prompts_path),
-        "direction_path": str(direction_path),
+        "direction_path": str(direction_specs[0][1]) if len(direction_specs) == 1 else None,
+        "direction_specs": [
+            {
+                "layer": int(layer),
+                "direction_path": str(direction_path),
+                "alpha": float(alpha),
+            }
+            for layer, direction_path, alpha in direction_specs
+        ],
         "model": args.model,
-        "layer": int(args.layer),
-        "alpha": float(args.alpha),
+        "layer": int(direction_specs[0][0]) if len(direction_specs) == 1 else None,
+        "alpha": float(direction_specs[0][2]) if len(direction_specs) == 1 else None,
         "max_tokens": int(args.max_tokens),
         "device": args.device,
         "dtype": args.dtype,
