@@ -129,6 +129,8 @@ Prepared cloud configs live under `configs/cloud/`:
 - `llama3_70b_full_350_m15_gt200_probe_placebo.yaml`
 - `gemma2_9b_full_350_m15_gt200_probe_placebo.yaml`
 - `qwen25_72b_full_350_m15_gt200_probe_placebo.yaml`
+- `llama3_8b_l4_safe.yaml`
+- `gemma2_9b_l4_safe.yaml`
 
 Prepared campaign manifest:
 
@@ -142,6 +144,17 @@ python scripts/run_cloud_campaign.py \
 ```
 
 The campaign runner writes `<manifest>.summary.json` with per-step status and respects `skip_if_exists` guards.
+
+For a single NVIDIA L4 24GB machine, do not use the 70B/72B manifest. Use the L4-safe manifest instead:
+
+```bash
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_l4_single_gpu.yaml \
+  --dry-run
+
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_l4_single_gpu.yaml
+```
 
 ### Utility Benchmarks
 
