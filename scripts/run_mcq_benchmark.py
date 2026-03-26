@@ -159,11 +159,16 @@ def _prepare_mmlu_examples(
         ) from exc
 
     candidate_subjects = [
-        cfg for cfg in get_dataset_config_names("cais/mmlu") if cfg and cfg != "all"
+        cfg
+        for cfg in get_dataset_config_names("cais/mmlu")
+        if cfg and cfg not in {"all", "default"}
     ]
     available_subjects: list[str] = []
     for cfg_name in candidate_subjects:
-        builder = load_dataset_builder("cais/mmlu", cfg_name)
+        try:
+            builder = load_dataset_builder("cais/mmlu", cfg_name)
+        except Exception:
+            continue
         split_names = set((builder.info.splits or {}).keys())
         if {"dev", split}.issubset(split_names):
             available_subjects.append(cfg_name)
