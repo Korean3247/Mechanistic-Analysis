@@ -151,20 +151,29 @@ def _prepare_mmlu_examples(
     subjects: Sequence[str] | None,
 ) -> list[BenchmarkExample]:
     try:
-        from datasets import get_dataset_config_names, load_dataset
+        from datasets import get_dataset_config_names, load_dataset, load_dataset_builder
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(
             "The 'datasets' package is required for MMLU benchmarking. "
             "Install it with `pip install datasets`."
         ) from exc
 
-    available_subjects = [
+    candidate_subjects = [
         cfg for cfg in get_dataset_config_names("cais/mmlu") if cfg and cfg != "all"
     ]
+    available_subjects: list[str] = []
+    for cfg_name in candidate_subjects:
+        builder = load_dataset_builder("cais/mmlu", cfg_name)
+        split_names = set((builder.info.splits or {}).keys())
+        if {"dev", split}.issubset(split_names):
+            available_subjects.append(cfg_name)
     selected_subjects = list(subjects) if subjects else available_subjects
     missing = sorted(set(selected_subjects) - set(available_subjects))
     if missing:
-        raise ValueError(f"Unknown MMLU subjects: {missing}")
+        raise ValueError(
+            f"Unknown or unsupported MMLU subjects for split={split!r}: {missing}. "
+            f"Available subjects with dev/{split}: {available_subjects[:10]}..."
+        )
 
     examples: list[BenchmarkExample] = []
     for subject in selected_subjects:

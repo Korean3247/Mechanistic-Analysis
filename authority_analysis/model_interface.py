@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
@@ -47,13 +48,19 @@ class ModelInterface:
         self.model_name = model_name
         self.device = self._resolve_device(device)
         torch_dtype = self._resolve_dtype(dtype, self.device)
+        self.hf_token = (
+            os.environ.get("HF_TOKEN")
+            or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+            or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, token=self.hf_token)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
+            token=self.hf_token,
             torch_dtype=torch_dtype,
             low_cpu_mem_usage=True,
             device_map="auto",
