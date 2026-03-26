@@ -46,8 +46,8 @@ class ModelInterface:
         compliance_cues: Sequence[str] | None = None,
     ) -> None:
         self.model_name = model_name
-        self.device = self._resolve_device(device)
-        torch_dtype = self._resolve_dtype(dtype, self.device)
+        requested_device = self._resolve_device(device)
+        torch_dtype = self._resolve_dtype(dtype, requested_device)
         self.hf_token = (
             os.environ.get("HF_TOKEN")
             or os.environ.get("HUGGINGFACE_HUB_TOKEN")
@@ -66,6 +66,7 @@ class ModelInterface:
             device_map="auto",
         )
         self.model.eval()
+        self.device = self._infer_model_input_device(fallback=requested_device)
 
         self.layers = self._decoder_layers()
         self.refusal_cues = list(refusal_cues) if refusal_cues is not None else list(REFUSAL_CUES)
@@ -98,6 +99,31 @@ class ModelInterface:
         if hasattr(model, "gpt_neox") and hasattr(model.gpt_neox, "layers"):
             return model.gpt_neox.layers
         raise ValueError("Unsupported architecture: unable to locate decoder layers")
+
+    def _infer_model_input_device(self, fallback: torch.device) -> torch.device:
+        try:
+            embed = self.model.get_input_embeddings()
+            if embed is not None and hasattr(embed, "weight"):
+                return embed.weight.device
+        except Exception:
+            pass
+
+        hf_device_map = getattr(self.model, "hf_device_map", None)
+        if isinstance(hf_device_map, dict):
+            for key in (
+                "model.embed_tokens",
+                "model.model.embed_tokens",
+                "transformer.wte",
+                "gpt_neox.embed_in",
+            ):
+                location = hf_device_map.get(key)
+                if isinstance(location, str) and location != "disk":
+                    return torch.device(location)
+
+        try:
+            return next(self.model.parameters()).device
+        except StopIteration:
+            return fallback
 
     @staticmethod
     def _to_fp16_cpu(tensor: torch.Tensor) -> torch.Tensor:
