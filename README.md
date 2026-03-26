@@ -134,6 +134,7 @@ Prepared cloud configs live under `configs/cloud/`:
 - `qwen25_72b_full_350_m15_gt200_probe_placebo.yaml`
 - `llama3_8b_l4_safe.yaml`
 - `gemma2_9b_l4_safe.yaml`
+- `mistral7b_l4_safe.yaml`
 
 Prepared campaign manifest:
 
@@ -157,6 +158,17 @@ python scripts/run_cloud_campaign.py \
 
 python scripts/run_cloud_campaign.py \
   --manifest configs/cloud/campaign_l4_single_gpu.yaml
+```
+
+For L4-only cross-family follow-ups (Gemma + Mistral refit only):
+
+```bash
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_l4_cross_family.yaml \
+  --dry-run
+
+python scripts/run_cloud_campaign.py \
+  --manifest configs/cloud/campaign_l4_cross_family.yaml
 ```
 
 ### Utility Benchmarks
@@ -201,6 +213,43 @@ python scripts/run_frozen_direction_replay.py \
 ```
 
 Use this path only after you have direction vectors for each target layer. The current main pipeline still trains a single-layer SAE/direction per run.
+
+On an L4-only machine, the practical route is:
+- use exact-main layer-10 direction for utility benchmarks,
+- run Gemma/Mistral refits locally on L4,
+- run multi-layer replay only after uploading layer-8 and layer-12 direction vectors from an existing robustness sweep.
+
+Example L4 follow-ups:
+
+```bash
+python scripts/run_experiment.py --config configs/cloud/gemma2_9b_l4_safe.yaml
+python scripts/run_experiment.py --config configs/cloud/mistral7b_l4_safe.yaml
+```
+
+Curated-set multi-layer replay (requires uploaded layer-8 and layer-12 vectors):
+
+```bash
+python scripts/run_frozen_direction_replay.py \
+  --prompts data/prompts.jsonl \
+  --output-dir results/llama3_curated_multilayer_replay \
+  --model meta-llama/Meta-Llama-3-8B-Instruct \
+  --direction-spec 8:results/llama3_full350_robust_l8_a1p0_s0/authority_direction_vector.pt:1.0 \
+  --direction-spec 10:analysis_packages/llama3_full_350_m15_gt200_probe_placebo_full_paper/collected_runs/main/authority_direction_vector.pt:1.0 \
+  --direction-spec 12:results/llama3_full350_robust_l12_a1p0_s0/authority_direction_vector.pt:1.0 \
+  --max-tokens 128 \
+  --dtype bfloat16
+```
+
+Gemma sign-reversal comparison after a Gemma refit run finishes:
+
+```bash
+python scripts/analyze_gemma_sign_reversal.py \
+  --frozen-run <path-to-gemma-frozen-replay-run> \
+  --refit-run results/gemma2_9b_l4_full_350_m10_gt200_probe_placebo \
+  --out-dir results/gemma_sign_reversal_l4 \
+  --frozen-label "Gemma exact-main replay" \
+  --refit-label "Gemma refit"
+```
 
 ## Final Comparison Package
 

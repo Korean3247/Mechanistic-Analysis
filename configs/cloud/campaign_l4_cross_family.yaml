@@ -1,0 +1,20 @@
+env:
+  TOKENIZERS_PARALLELISM: "false"
+  HF_HUB_ENABLE_HF_TRANSFER: "1"
+
+steps:
+  - name: "gemma2_9b_refit_l4"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/gemma2_9b_l4_safe.yaml"
+    skip_if_exists: "results/gemma2_9b_l4_full_350_m10_gt200_probe_placebo/metrics.json"
+
+  - name: "mistral7b_refit_l4"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/mistral7b_l4_safe.yaml"
+    skip_if_exists: "results/mistral7b_l4_full_350_m10_gt200_probe_placebo/metrics.json"
