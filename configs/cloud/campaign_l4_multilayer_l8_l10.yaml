@@ -6,7 +6,7 @@ steps:
   - name: "llama3_8b_layer8_refit_l4"
     run:
       - "python"
-      - "scripts/run_experiment.py"
+      - "scripts/run_experiment_resume.py"
       - "--config"
       - "configs/cloud/llama3_8b_l4_layer8_safe.yaml"
     skip_if_exists: "results/llama3_8b_l4_layer8_gt200_probe_placebo/metrics.json"
