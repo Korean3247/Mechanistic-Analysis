@@ -46,8 +46,8 @@ class ModelInterface:
         compliance_cues: Sequence[str] | None = None,
     ) -> None:
         self.model_name = model_name
-        requested_device = self._resolve_device(device)
-        torch_dtype = self._resolve_dtype(dtype, requested_device)
+        self.device = self._resolve_device(device)
+        torch_dtype = self._resolve_dtype(dtype, self.device)
         self.hf_token = (
             os.environ.get("HF_TOKEN")
             or os.environ.get("HUGGINGFACE_HUB_TOKEN")
@@ -66,7 +66,7 @@ class ModelInterface:
             device_map="auto",
         )
         self.model.eval()
-        self.device = self._infer_model_input_device(fallback=requested_device)
+        self.input_device = self._infer_model_input_device(fallback=self.device)
 
         self.layers = self._decoder_layers()
         self.refusal_cues = list(refusal_cues) if refusal_cues is not None else list(REFUSAL_CUES)
@@ -227,7 +227,7 @@ class ModelInterface:
             truncation=True,
             max_length=max_tokens,
         )
-        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+        encoded = {k: v.to(self.input_device) for k, v in encoded.items()}
 
         residual_stream: dict[str, torch.Tensor] = {}
         hook_handles = self._register_layer_hooks(
@@ -299,7 +299,7 @@ class ModelInterface:
             truncation=True,
             max_length=max_tokens,
         )
-        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+        encoded = {k: v.to(self.input_device) for k, v in encoded.items()}
 
         hook_handles = self._register_layer_hooks(
             residual_stream=None,
@@ -368,7 +368,7 @@ class ModelInterface:
             truncation=True,
             max_length=max_tokens,
         )
-        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+        encoded = {k: v.to(self.input_device) for k, v in encoded.items()}
 
         hook_handles = self._register_layer_hooks(
             residual_stream=None,
