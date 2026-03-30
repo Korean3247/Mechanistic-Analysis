@@ -1,0 +1,332 @@
+# ============================================================
+# Master NeurIPS Campaign — L4 GPU (24GB)
+# ============================================================
+# Run with:
+#   python scripts/run_cloud_campaign.py \
+#       --manifest configs/cloud/campaign_l4_full_neurips.yaml \
+#       2>&1 | tee logs/campaign_l4_full_$(date +%Y%m%d_%H%M%S).log
+#
+# Estimated total time: ~4-5 days on single L4
+# Each step has skip_if_exists so you can restart safely.
+# ============================================================
+
+env:
+  TOKENIZERS_PARALLELISM: "false"
+  HF_HUB_ENABLE_HF_TRANSFER: "1"
+
+steps:
+
+  # ===========================================================
+  # PHASE 0: Dataset expansion (urgency + empathy framings)
+  # ===========================================================
+  - name: "build_expanded_dataset"
+    run: "python scripts/build_expanded_dataset.py"
+    skip_if_exists: "data/prompts_expanded.jsonl"
+
+  # ===========================================================
+  # PHASE 1: LLaMA-3-8B expanded dataset (n≈200 unsafe pairs)
+  # ===========================================================
+  - name: "llama3_8b_expanded"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/llama3_8b_l4_expanded.yaml"
+    skip_if_exists: "results/llama3_8b_l4_expanded_700_m15_gt200_probe_placebo/metrics.json"
+
+  # ===========================================================
+  # PHASE 2: Cross-family models (🔴 High Impact)
+  # ===========================================================
+  - name: "qwen25_7b"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/qwen25_7b_l4_safe.yaml"
+    skip_if_exists: "results/qwen25_7b_l4_full_350_m15_gt200_probe_placebo/metrics.json"
+
+  - name: "phi3_mini"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/phi3_mini_l4_safe.yaml"
+    skip_if_exists: "results/phi3_mini_l4_full_350_m15_gt200_probe_placebo/metrics.json"
+
+  - name: "gemma2_2b"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/gemma2_2b_l4_safe.yaml"
+    skip_if_exists: "results/gemma2_2b_l4_full_350_m15_gt200_probe_placebo/metrics.json"
+
+  - name: "gemma2_9b_refit"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/gemma2_9b_l4_safe.yaml"
+    skip_if_exists: "results/gemma2_9b_l4_full_350_m10_gt200_probe_placebo/metrics.json"
+
+  - name: "mistral7b_refit"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/mistral7b_l4_safe.yaml"
+    skip_if_exists: "results/mistral7b_l4_full_350_m10_gt200_probe_placebo/metrics.json"
+
+  # ===========================================================
+  # PHASE 3: 14B model (int8 quantized) — scale argument
+  # ===========================================================
+  - name: "qwen25_14b_int8"
+    run:
+      - "python"
+      - "scripts/run_experiment.py"
+      - "--config"
+      - "configs/cloud/qwen25_14b_l4_int8.yaml"
+    skip_if_exists: "results/qwen25_14b_l4_int8_full_350_m15_gt200_probe_placebo/metrics.json"
+    allow_failure: true
+
+  # ===========================================================
+  # PHASE 4: MMLU / TruthfulQA benchmarks (LLaMA-3-8B)
+  # ===========================================================
+  - name: "llama3_8b_mmlu_baseline"
+    run:
+      - "python"
+      - "scripts/run_mcq_benchmark.py"
+      - "--task"
+      - "mmlu"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--output-dir"
+      - "results/benchmarks/llama3_8b_mmlu_baseline"
+      - "--fewshot"
+      - "5"
+      - "--max-tokens"
+      - "2048"
+      - "--dtype"
+      - "bfloat16"
+    skip_if_exists: "results/benchmarks/llama3_8b_mmlu_baseline/summary.json"
+
+  - name: "llama3_8b_mmlu_intervention"
+    run:
+      - "python"
+      - "scripts/run_mcq_benchmark.py"
+      - "--task"
+      - "mmlu"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--output-dir"
+      - "results/benchmarks/llama3_8b_mmlu_intervention"
+      - "--fewshot"
+      - "5"
+      - "--max-tokens"
+      - "2048"
+      - "--dtype"
+      - "bfloat16"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--layer"
+      - "10"
+      - "--alpha"
+      - "1.0"
+    skip_if_exists: "results/benchmarks/llama3_8b_mmlu_intervention/summary.json"
+
+  - name: "llama3_8b_truthfulqa_baseline"
+    run:
+      - "python"
+      - "scripts/run_mcq_benchmark.py"
+      - "--task"
+      - "truthfulqa_mc1"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--output-dir"
+      - "results/benchmarks/llama3_8b_truthfulqa_baseline"
+      - "--max-tokens"
+      - "2048"
+      - "--dtype"
+      - "bfloat16"
+    skip_if_exists: "results/benchmarks/llama3_8b_truthfulqa_baseline/summary.json"
+
+  - name: "llama3_8b_truthfulqa_intervention"
+    run:
+      - "python"
+      - "scripts/run_mcq_benchmark.py"
+      - "--task"
+      - "truthfulqa_mc1"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--output-dir"
+      - "results/benchmarks/llama3_8b_truthfulqa_intervention"
+      - "--max-tokens"
+      - "2048"
+      - "--dtype"
+      - "bfloat16"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--layer"
+      - "10"
+      - "--alpha"
+      - "1.0"
+    skip_if_exists: "results/benchmarks/llama3_8b_truthfulqa_intervention/summary.json"
+
+  # ===========================================================
+  # PHASE 5: Multi-layer intervention (layer 8+10)
+  # ===========================================================
+  - name: "llama3_8b_layer8_direction"
+    run:
+      - "python"
+      - "scripts/run_experiment_resume.py"
+      - "--config"
+      - "configs/cloud/llama3_8b_l4_layer8_safe.yaml"
+    skip_if_exists: "results/llama3_8b_l4_layer8_gt200_probe_placebo/metrics.json"
+
+  - name: "llama3_multilayer_l8_l10_curated"
+    run:
+      - "python"
+      - "scripts/run_frozen_direction_replay.py"
+      - "--prompts"
+      - "data/prompts.jsonl"
+      - "--output-dir"
+      - "results/llama3_multilayer_l8_l10_curated"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--direction-spec"
+      - "8:results/llama3_8b_l4_layer8_gt200_probe_placebo/authority_direction_vector.pt:1.0"
+      - "--direction-spec"
+      - "10:results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt:1.0"
+      - "--max-tokens"
+      - "128"
+      - "--dtype"
+      - "bfloat16"
+      - "--control-framings"
+      - "direct"
+      - "hypothetical"
+      - "academic"
+      - "institutional"
+      - "--refusal-margin"
+      - "1.5"
+    skip_if_exists: "results/llama3_multilayer_l8_l10_curated/posthoc/posthoc_analysis.json"
+
+  - name: "llama3_multilayer_l8_l10_holdout"
+    run:
+      - "python"
+      - "scripts/run_frozen_direction_replay.py"
+      - "--prompts"
+      - "data/prompts_holdout_external.jsonl"
+      - "--output-dir"
+      - "results/llama3_multilayer_l8_l10_holdout"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--direction-spec"
+      - "8:results/llama3_8b_l4_layer8_gt200_probe_placebo/authority_direction_vector.pt:1.0"
+      - "--direction-spec"
+      - "10:results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt:1.0"
+      - "--max-tokens"
+      - "128"
+      - "--dtype"
+      - "bfloat16"
+      - "--control-framings"
+      - "direct"
+      - "--refusal-margin"
+      - "1.0"
+    skip_if_exists: "results/llama3_multilayer_l8_l10_holdout/posthoc/posthoc_analysis.json"
+
+  # ===========================================================
+  # PHASE 6: Spillover gating (🟡 Medium Impact)
+  # ===========================================================
+  - name: "spillover_gating_llama3"
+    run:
+      - "python"
+      - "scripts/run_spillover_gating.py"
+      - "--prompts"
+      - "data/prompts.jsonl"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--layer"
+      - "10"
+      - "--alpha"
+      - "1.0"
+      - "--output-dir"
+      - "results/spillover_gating_llama3"
+      - "--dtype"
+      - "bfloat16"
+    skip_if_exists: "results/spillover_gating_llama3/gating_results.json"
+
+  # ===========================================================
+  # PHASE 7: Adaptive alpha (🟢 Nice to have)
+  # ===========================================================
+  - name: "adaptive_alpha_llama3"
+    run:
+      - "python"
+      - "scripts/run_adaptive_alpha.py"
+      - "--prompts"
+      - "data/prompts.jsonl"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--layer"
+      - "10"
+      - "--output-dir"
+      - "results/adaptive_alpha_llama3"
+      - "--dtype"
+      - "bfloat16"
+    skip_if_exists: "results/adaptive_alpha_llama3/adaptive_alpha_results.json"
+
+  # ===========================================================
+  # PHASE 8: SAE decomposition visualization (🟢 Nice to have)
+  # ===========================================================
+  - name: "sae_decomposition_llama3"
+    run:
+      - "python"
+      - "scripts/visualize_sae_decomposition.py"
+      - "--sae"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_sae.pt"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--output-dir"
+      - "results/sae_decomposition_llama3"
+    skip_if_exists: "results/sae_decomposition_llama3/top_features.json"
+
+  # ===========================================================
+  # PHASE 9: Gemma sign reversal analysis
+  # ===========================================================
+  - name: "gemma_sign_reversal_analysis"
+    run:
+      - "python"
+      - "scripts/analyze_gemma_sign_reversal.py"
+      - "--gemma-results"
+      - "results/gemma2_9b_l4_full_350_m10_gt200_probe_placebo"
+      - "--llama-results"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo"
+      - "--output-dir"
+      - "results/gemma_sign_reversal"
+    skip_if_exists: "results/gemma_sign_reversal/reversal_analysis.json"
+    allow_failure: true
+
+  # ===========================================================
+  # PHASE 10: Cue token expansion
+  # ===========================================================
+  - name: "cue_sensitivity_expanded"
+    run:
+      - "python"
+      - "scripts/replay_cue_sensitivity.py"
+      - "--prompts"
+      - "data/prompts.jsonl"
+      - "--direction"
+      - "results/llama3_8b_l4_full_350_m15_gt200_probe_placebo/authority_direction_vector.pt"
+      - "--model"
+      - "meta-llama/Meta-Llama-3-8B-Instruct"
+      - "--output-dir"
+      - "results/cue_sensitivity_expanded"
+      - "--layer"
+      - "10"
+      - "--dtype"
+      - "bfloat16"
+    skip_if_exists: "results/cue_sensitivity_expanded/cue_sensitivity.json"
+    allow_failure: true
