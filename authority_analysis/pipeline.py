@@ -830,6 +830,7 @@ def run_full_experiment(config_path: str | Path) -> dict[str, Any]:
         layer_idx=cfg.layer_for_sae,
         hook_point="post",
         top_k=cfg.top_k_features,
+        control_framing_types=getattr(cfg, "control_framing_types", None),
     )
     direction_path, feature_summary_path = save_feature_analysis(result_root, feature_payload)
 

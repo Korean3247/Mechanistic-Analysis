@@ -18,6 +18,7 @@ def compute_feature_analysis(
     layer_idx: int,
     hook_point: str = "post",
     top_k: int = 24,
+    control_framing_types: list[str] | None = None,
 ) -> dict[str, Any]:
     matrix, metadata = load_layer_residual_matrix(activation_dir, layer_idx=layer_idx, hook_point=hook_point)
     sae_model, _ = load_sae_checkpoint(sae_ckpt_path)
@@ -38,7 +39,10 @@ def compute_feature_analysis(
     if "authority" not in per_framing_mean:
         raise ValueError("No authority samples found in activation set")
 
-    control_idx = [i for i, f in enumerate(framings) if f != "authority"]
+    if control_framing_types is not None:
+        control_idx = [i for i, f in enumerate(framings) if f in control_framing_types]
+    else:
+        control_idx = [i for i, f in enumerate(framings) if f != "authority"]
     if not control_idx:
         raise ValueError("No control samples found in activation set")
 
